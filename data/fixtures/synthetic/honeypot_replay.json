@@ -1,0 +1,11 @@
+[
+  {
+    "event_id": "HP-SYNTH-0001",
+    "scenario_id": "disabled-bootstrap-fixture",
+    "observed_at": "2026-01-01T00:00:00+00:00",
+    "event_type": "synthetic_attempt",
+    "cve_id": "CVE-SYNTH-000001",
+    "synthetic_or_authorised_replay": true,
+    "note": "Schema and replay validation only; not observed attacker telemetry."
+  }
+]

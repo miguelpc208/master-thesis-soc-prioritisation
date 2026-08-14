@@ -1,0 +1,9 @@
+experiment:
+  id: e1_cvss
+  label: CVSS-only human-workflow baseline
+  policy: cvss
+  enabled: true
+  tie_breaker: finding_id_ascending
+  ai_assistance: false
+  honeypot_evidence: false
+

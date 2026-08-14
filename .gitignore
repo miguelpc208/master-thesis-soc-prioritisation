@@ -1,0 +1,45 @@
+.env
+.env.*
+!.env.example
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+build/
+dist/
+*.egg-info/
+.ipynb_checkpoints/
+
+# Large, reproducible, or sensitive data
+VulZoo/
+data/raw/
+data/external/
+data/interim/
+data/processed/
+*.db
+*.sqlite
+*.sqlite3
+*.parquet
+
+# Generated artefacts
+outputs/*
+!outputs/README.md
+logs/
+models/
+*.log
+
+# LLM and honeypot material must never be committed
+ai_outputs/
+honeypot_payloads/
+
+# Operating-system and editor files
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+

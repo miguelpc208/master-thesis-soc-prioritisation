@@ -1,0 +1,10 @@
+experiment:
+  id: e2_threat_intel
+  label: KEV then EPSS then CVSS human-workflow baseline
+  policy: threat_intel
+  enabled: true
+  tie_breaker: finding_id_ascending
+  evidence_order: [kev_as_of_decision, epss_probability_as_of_decision, cvss]
+  ai_assistance: false
+  honeypot_evidence: false
+

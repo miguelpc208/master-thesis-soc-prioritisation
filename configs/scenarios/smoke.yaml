@@ -1,0 +1,33 @@
+scenario:
+  id: smoke
+  label: Small engineering validation only
+  seed: 20260803
+  start_time_utc: "2026-01-01T09:00:00+00:00"
+  horizon_hours: 72
+  organisation:
+    departments: 3
+    services: 10
+    assets: 100
+    teams: 5
+  workload:
+    findings: 240
+    duplicate_rate: 0.18
+    arrival_interval_minutes: 1.0
+  capacity:
+    analysts: 3
+    remediators: 2
+    triage_minutes_min: 12
+    triage_minutes_max: 35
+    remediation_minutes_min: 45
+    remediation_minutes_max: 240
+  workflow:
+    alert_delay_minutes: 2
+    correlation_minutes: 1
+    assignment_minutes: 1
+    patch_window_delay_minutes: 30
+  sla_hours:
+    critical: 24
+    high: 48
+    medium: 96
+    low: 168
+

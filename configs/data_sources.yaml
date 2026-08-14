@@ -1,0 +1,39 @@
+sources:
+  vulzoo:
+    url: https://github.com/NUS-Curiosity/VulZoo
+    purpose: Multi-dimensional public vulnerability intelligence anchor
+    retrieval_date: null
+    snapshot_date: "2024-07-06"
+    checksum: null
+    local_relative_path: VulZoo
+    licence_note: Verify upstream licences and per-source terms before redistribution.
+    enabled: false
+  epss:
+    url: https://www.first.org/epss/data
+    purpose: Date-pinned exploitation probability and percentile
+    retrieval_date: null
+    snapshot_date: null
+    model_version: null
+    checksum: null
+    local_relative_path: snapshots/epss
+    licence_note: Record FIRST terms and model-version boundary in each run.
+    enabled: false
+  cisa_kev:
+    url: https://www.cisa.gov/known-exploited-vulnerabilities-catalog
+    purpose: Date-aware known-exploitation evidence
+    retrieval_date: null
+    snapshot_date: null
+    checksum: null
+    local_relative_path: snapshots/cisa-kev
+    licence_note: Preserve dateAdded and catalogue retrieval date.
+    enabled: false
+  qualys_like_proxy:
+    url: null
+    purpose: Optional transparent comparison proxy; never labelled as Qualys data
+    retrieval_date: null
+    snapshot_date: null
+    checksum: null
+    local_relative_path: null
+    licence_note: No licensed Qualys data or API access is supplied.
+    enabled: false
+

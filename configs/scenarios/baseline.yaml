@@ -1,0 +1,22 @@
+scenario:
+  id: baseline
+  label: Working baseline assumptions requiring calibration
+  seed: 20260804
+  start_time_utc: "2026-01-01T09:00:00+00:00"
+  horizon_hours: 336
+  organisation: {departments: 5, services: 30, assets: 1000, teams: 8}
+  workload: {findings: 5000, duplicate_rate: 0.20, arrival_interval_minutes: 2.0}
+  capacity:
+    analysts: 8
+    remediators: 6
+    triage_minutes_min: 12
+    triage_minutes_max: 45
+    remediation_minutes_min: 60
+    remediation_minutes_max: 480
+  workflow:
+    alert_delay_minutes: 2
+    correlation_minutes: 2
+    assignment_minutes: 2
+    patch_window_delay_minutes: 120
+  sla_hours: {critical: 24, high: 72, medium: 168, low: 336}
+

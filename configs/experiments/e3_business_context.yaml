@@ -1,0 +1,17 @@
+experiment:
+  id: e3_business_context
+  label: Technical and business context working treatment
+  policy: business_context
+  enabled: false
+  weights:
+    technical: 0.30
+    exploitation: 0.25
+    asset_criticality: 0.15
+    service_criticality: 0.15
+    exposure: 0.05
+    data_sensitivity: 0.05
+    regulatory_scope: 0.05
+  sensitivity_required: true
+  ai_assistance: false
+  honeypot_evidence: false
+

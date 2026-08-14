@@ -1,0 +1,22 @@
+scenario:
+  id: stress
+  label: Capacity-stress assumptions requiring calibration
+  seed: 20260805
+  start_time_utc: "2026-01-01T09:00:00+00:00"
+  horizon_hours: 336
+  organisation: {departments: 8, services: 60, assets: 3000, teams: 10}
+  workload: {findings: 15000, duplicate_rate: 0.15, arrival_interval_minutes: 0.5}
+  capacity:
+    analysts: 6
+    remediators: 4
+    triage_minutes_min: 15
+    triage_minutes_max: 60
+    remediation_minutes_min: 90
+    remediation_minutes_max: 720
+  workflow:
+    alert_delay_minutes: 2
+    correlation_minutes: 3
+    assignment_minutes: 2
+    patch_window_delay_minutes: 240
+  sla_hours: {critical: 24, high: 72, medium: 168, low: 336}
+

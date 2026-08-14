@@ -1,0 +1,14 @@
+experiment:
+  id: e4_constraints
+  label: Business context plus scheduling constraints working treatment
+  policy: constrained_schedule
+  enabled: false
+  base_policy: business_context
+  constraints:
+    respect_team_capacity: true
+    respect_patch_windows: true
+    respect_freezes: true
+    respect_dependencies: true
+    respect_risk_acceptance: true
+  ai_assistance: false
+  honeypot_evidence: false

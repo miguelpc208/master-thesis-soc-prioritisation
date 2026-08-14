@@ -1,0 +1,10 @@
+cff-version: 1.2.0
+message: "If you use this research software, cite the dissertation and the VulZoo paper."
+title: "Business-Aware SOC Vulnerability Prioritisation Simulation"
+type: software
+authors:
+  - given-names: Ricardo
+version: 0.1.0
+date-released: 2026-08-03
+repository-code: "pending private GitHub repository approval"
+
