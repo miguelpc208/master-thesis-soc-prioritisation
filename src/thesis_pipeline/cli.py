@@ -10,6 +10,7 @@ import sys
 
 from thesis_pipeline.config import ConfigurationError, load_experiment, load_scenario
 from thesis_pipeline.ingestion.inventory import inventory_vulzoo
+from thesis_pipeline.ingestion.profiling import profile_vulzoo
 from thesis_pipeline.run import project_root, run_experiment
 from thesis_pipeline.storage.schema import initialise_database
 from thesis_pipeline.synthetic_org.generator import generate_dataset
@@ -70,6 +71,14 @@ def build_parser() -> argparse.ArgumentParser:
     )
     inventory.add_argument("--config", required=True)
 
+    profile = subparsers.add_parser(
+        "profile-vulzoo",
+        help="Profile approved VulZoo collections without exporting raw content",
+    )
+    profile.add_argument("--config", required=True)
+    profile.add_argument("--sample-limit", type=int, default=2)
+    profile.add_argument("--max-json-mib", type=int, default=50)
+
     database = subparsers.add_parser(
         "init-db", help="Initialise the versioned SQLite schema outside the repository"
     )
@@ -110,6 +119,14 @@ def main(argv: list[str] | None = None) -> int:
             return 0
         if args.command == "inventory-vulzoo":
             print(json.dumps(inventory_vulzoo(args.config), indent=2, sort_keys=True))
+            return 0
+        if args.command == "profile-vulzoo":
+            profile = profile_vulzoo(
+                args.config,
+                sample_limit=args.sample_limit,
+                max_json_bytes=args.max_json_mib * 1024 * 1024,
+            )
+            print(json.dumps(profile, indent=2, sort_keys=True))
             return 0
         if args.command == "init-db":
             print(initialise_database(args.path))
