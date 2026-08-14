@@ -307,6 +307,7 @@ def profile_vulzoo(
             "url": source.get("url"),
             "retrieval_date": source.get("retrieval_date"),
             "readme_snapshot_date": source.get("snapshot_date"),
+            "readme_snapshot_note": source.get("snapshot_date_note"),
             "checksum": source.get("checksum"),
             "local_relative_path": source.get("local_relative_path"),
         },

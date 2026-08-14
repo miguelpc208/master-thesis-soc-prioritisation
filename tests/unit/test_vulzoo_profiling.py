@@ -14,6 +14,7 @@ sources:
     url: https://example.invalid/VulZoo
     retrieval_date: "2026-08-14"
     snapshot_date: "2024-07-06"
+    snapshot_date_note: "test index date only"
     checksum: "git:test"
     local_relative_path: VulZoo
     enabled: true
@@ -69,6 +70,7 @@ def test_profile_classifies_data_without_raw_content(
         for collection in profile["collections"]
     }
 
+    assert profile["source"]["readme_snapshot_note"] == "test index date only"
     assert profile["scope"]["raw_content_included"] is False
     assert profile["scope"]["files_executed"] is False
     assert "exploit-db-database" not in collections

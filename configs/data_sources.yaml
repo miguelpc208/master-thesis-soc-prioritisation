@@ -4,6 +4,7 @@ sources:
     purpose: Multi-dimensional public vulnerability intelligence anchor
     retrieval_date: "2026-08-14"
     snapshot_date: "2024-07-06"
+    snapshot_date_note: "processed/README.md index date only; component snapshots vary."
     checksum: "git-commit-sha1:c504fa2537300a42fea1ff0adabfa9ca6687e435"
     local_relative_path: VulZoo
     licence_note: Verify upstream licences and per-source terms before redistribution.

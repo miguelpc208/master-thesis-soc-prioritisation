@@ -34,3 +34,5 @@ Source anchors:
 - Integrity status: clean working tree at the pinned upstream commit after applying the approved sparse paths.
 - Limitation: this is a dated processed snapshot and must not be described as current 2026 vulnerability intelligence.
 - Security note: two unavailable JavaScript files were confined to the Exploit-DB proof-of-concept corpus. No cause is asserted; the complete corpus is excluded by design.
+
+See [VULZOO_PROFILE.md](VULZOO_PROFILE.md) for the reproducible collection, format, temporal-provenance and relationship-contract profile.
