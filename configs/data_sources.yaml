@@ -1,5 +1,5 @@
 sources:
-   vulzoo:
+  vulzoo:
     url: https://github.com/NUS-Curiosity/VulZoo
     purpose: Multi-dimensional public vulnerability intelligence anchor
     retrieval_date: "2026-08-14"
