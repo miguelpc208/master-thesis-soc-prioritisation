@@ -32,6 +32,7 @@ python -m thesis_pipeline.cli generate-synthetic --config configs/scenarios/smok
 python -m thesis_pipeline.cli run-experiment --experiment configs/experiments/e1_cvss.yaml --scenario configs/scenarios/smoke.yaml
 python -m thesis_pipeline.cli run-experiment --experiment configs/experiments/e2_threat_intel.yaml --scenario configs/scenarios/smoke.yaml
 python -m thesis_pipeline.cli inventory-vulzoo --config configs/data_sources.yaml
+python -m thesis_pipeline.cli profile-vulzoo --config configs/data_sources.yaml --sample-limit 2 --max-json-mib 50
 ```
 
 `inventory-vulzoo` never downloads data. It inventories an already approved local clone beneath
