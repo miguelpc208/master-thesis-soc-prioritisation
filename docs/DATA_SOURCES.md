@@ -36,3 +36,6 @@ Source anchors:
 - Security note: two unavailable JavaScript files were confined to the Exploit-DB proof-of-concept corpus. No cause is asserted; the complete corpus is excluded by design.
 
 See [VULZOO_PROFILE.md](VULZOO_PROFILE.md) for the reproducible collection, format, temporal-provenance and relationship-contract profile.
+
+See [VULNERABILITY_INGESTION_CONTRACT.md](VULNERABILITY_INGESTION_CONTRACT.md)
+for the approved NVD, CVE and KEV normalisation boundary.

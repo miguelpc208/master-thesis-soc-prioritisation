@@ -1,4 +1,4 @@
-# Phase 2 data dictionary
+# Data dictionary
 
 Null means unavailable/not applicable, never zero or false. External observations require source,
 retrieval timestamp, effective/as-of date, and checksum or snapshot identity.
@@ -34,5 +34,24 @@ Records also retain priority rank, analyst/remediator ID, and SLA deadline.
 - Utilisation values are simulation proxies, not observed staff productivity.
 - Ranking labels are synthetic and support engineering checks only.
 
-See `schemas/logical_data_model.md` and `schemas/001_initial.sql` for the broader Phase 3 schema.
+See `schemas/logical_data_model.md` and the numbered files under `schemas/` for the broader Phase 3
+schema.
 
+## Phase 3 vulnerability-intelligence fields
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `source_snapshot_id` | string FK | Exact source/checksum identity shared by imported records |
+| `ingestion_run_id` | string FK | Deterministic ingestion execution that accepted the record |
+| `vulnerability_status` | nullable string | NVD `vulnStatus`; no inferred replacement when absent |
+| `observed_at_utc` | UTC datetime | Earliest conservative time at which the stored observation may be used |
+| `metric_source`, `metric_type` | nullable string | NVD CVSS provider and metric classification |
+| `base_score` | nullable float 0–10 | Stored CVSS value; missing is never converted to zero |
+| `base_severity` | nullable string | Source-reported CVSS severity label |
+| `exploitability_score` | nullable float | Source-reported CVSS exploitability component |
+| `impact_score` | nullable float | Source-reported CVSS impact component |
+| `date_added` | date | CISA KEV membership effective date |
+| `catalogue_date` | date | Dated KEV catalogue version containing the observation |
+| `vulnerable` | boolean | NVD CPE match flag; does not by itself prove asset exposure |
+
+See `VULNERABILITY_INGESTION_CONTRACT.md` for precedence, temporal and rejection rules.
