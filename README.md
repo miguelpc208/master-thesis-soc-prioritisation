@@ -33,6 +33,7 @@ python -m thesis_pipeline.cli run-experiment --experiment configs/experiments/e1
 python -m thesis_pipeline.cli run-experiment --experiment configs/experiments/e2_threat_intel.yaml --scenario configs/scenarios/smoke.yaml
 python -m thesis_pipeline.cli inventory-vulzoo --config configs/data_sources.yaml
 python -m thesis_pipeline.cli profile-vulzoo --config configs/data_sources.yaml --sample-limit 2 --max-json-mib 50
+python -m thesis_pipeline.cli scan-vulzoo-coverage --config configs/data_sources.yaml --max-json-mib 5
 ```
 
 `inventory-vulzoo` never downloads data. It inventories an already approved local clone beneath
@@ -86,4 +87,3 @@ claims. E3/E4 assumptions require calibration and sensitivity analysis. E5/E6 re
 - CISA KEV: https://www.cisa.gov/known-exploited-vulnerabilities-catalog
 
 The final dissertation title and software licence remain pending supervisor/university confirmation.
-

@@ -9,6 +9,7 @@ import subprocess
 import sys
 
 from thesis_pipeline.config import ConfigurationError, load_experiment, load_scenario
+from thesis_pipeline.ingestion.coverage import scan_vulzoo_coverage
 from thesis_pipeline.ingestion.inventory import inventory_vulzoo
 from thesis_pipeline.ingestion.profiling import profile_vulzoo
 from thesis_pipeline.run import project_root, run_experiment
@@ -79,6 +80,14 @@ def build_parser() -> argparse.ArgumentParser:
     profile.add_argument("--sample-limit", type=int, default=2)
     profile.add_argument("--max-json-mib", type=int, default=50)
 
+    coverage = subparsers.add_parser(
+        "scan-vulzoo-coverage",
+        help="Scan complete NVD/CVE/KEV metadata without exporting raw records",
+    )
+    coverage.add_argument("--config", required=True)
+    coverage.add_argument("--max-json-mib", type=int, default=5)
+    coverage.add_argument("--rejection-sample-limit", type=int, default=20)
+
     database = subparsers.add_parser(
         "init-db", help="Initialise the versioned SQLite schema outside the repository"
     )
@@ -127,6 +136,14 @@ def main(argv: list[str] | None = None) -> int:
                 max_json_bytes=args.max_json_mib * 1024 * 1024,
             )
             print(json.dumps(profile, indent=2, sort_keys=True))
+            return 0
+        if args.command == "scan-vulzoo-coverage":
+            coverage = scan_vulzoo_coverage(
+                args.config,
+                max_json_bytes=args.max_json_mib * 1024 * 1024,
+                rejection_sample_limit=args.rejection_sample_limit,
+            )
+            print(json.dumps(coverage, indent=2, sort_keys=True))
             return 0
         if args.command == "init-db":
             print(initialise_database(args.path))

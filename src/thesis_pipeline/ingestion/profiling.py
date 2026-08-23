@@ -1,52 +1,19 @@
 from __future__ import annotations
 
 import json
-import os
 from collections import Counter
 from pathlib import Path
 from typing import Any
 
-import yaml
+from thesis_pipeline.ingestion.source import (
+    load_vulzoo_source_config,
+    resolve_vulzoo_root,
+)
 
 EXCLUDED_COLLECTIONS = {"exploit-db-database"}
 MAX_REPORTED_KEYS = 30
 MAX_SAMPLE_LIMIT = 100
 MAX_JSON_PROFILE_BYTES = 100 * 1024 * 1024
-
-
-def _load_source_config(config_path: str | Path) -> dict[str, Any]:
-    document = yaml.safe_load(Path(config_path).read_text(encoding="utf-8"))
-
-    try:
-        source = document["sources"]["vulzoo"]
-    except (KeyError, TypeError) as exc:
-        raise ValueError("VulZoo source configuration is missing or invalid") from exc
-
-    if not source.get("enabled"):
-        raise RuntimeError("VulZoo is not enabled in the data-source configuration")
-
-    return source
-
-
-def _resolve_root(source: dict[str, Any]) -> Path:
-    data_root = os.environ.get("THESIS_DATA_ROOT")
-
-    if not data_root:
-        raise RuntimeError(
-            "THESIS_DATA_ROOT is not set; approve a non-OneDrive path first"
-        )
-
-    root_path = Path(data_root).expanduser().resolve()
-
-    if any("onedrive" in part.casefold() for part in root_path.parts):
-        raise RuntimeError("THESIS_DATA_ROOT must remain outside OneDrive")
-
-    root = root_path / source["local_relative_path"]
-
-    if not root.is_dir():
-        raise RuntimeError(f"Approved VulZoo directory does not exist: {root}")
-
-    return root
 
 
 def _detect_format(path: Path) -> str:
@@ -245,8 +212,8 @@ def profile_vulzoo(
             f"{MAX_JSON_PROFILE_BYTES}"
         )
 
-    source = _load_source_config(config_path)
-    root = _resolve_root(source)
+    source = load_vulzoo_source_config(config_path)
+    root = resolve_vulzoo_root(source)
     processed_root = root / "processed"
 
     if not processed_root.is_dir():
