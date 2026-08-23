@@ -2,9 +2,12 @@
 
 SQLite migration `001_initial.sql` establishes the base schema. Migration
 `002_vulnerability_ingestion.sql` adds the source-snapshot, ingestion-run and rejection contracts,
-normalised CVE-to-CWE/CPE relations, and the additional NVD/KEV fields required by Phase 3. Applied
-migrations are immutable and recorded in `schema_version`; database initialisation safely skips
-versions already present. Every table has a primary key. Source-derived tables retain provenance
+normalised CVE-to-CWE/CPE relations, and the additional NVD/KEV fields required by Phase 3.
+`003_ingestion_observation_identity.sql` extends CVSS natural keys with provider/type and CPE
+relationship natural keys with criteria/version bounds, preserving distinct observations. Applied
+migrations are immutable and recorded in
+`schema_version`; database initialisation safely skips versions already present. Every table has a
+primary key. Source-derived tables retain provenance
 and retrieval/effective timestamps; synthetic and workflow tables retain a scenario/run identity
 and creation timestamps. Null means unavailable or not applicable and must never be silently
 converted to zero/false.

@@ -34,10 +34,16 @@ python -m thesis_pipeline.cli run-experiment --experiment configs/experiments/e2
 python -m thesis_pipeline.cli inventory-vulzoo --config configs/data_sources.yaml
 python -m thesis_pipeline.cli profile-vulzoo --config configs/data_sources.yaml --sample-limit 2 --max-json-mib 50
 python -m thesis_pipeline.cli scan-vulzoo-coverage --config configs/data_sources.yaml --max-json-mib 5
+python -m thesis_pipeline.cli init-db --path "$env:THESIS_DATA_ROOT\databases\vulzoo-ingestion.sqlite"
+python -m thesis_pipeline.cli ingest-vulzoo --config configs/data_sources.yaml --database "$env:THESIS_DATA_ROOT\databases\vulzoo-ingestion.sqlite" --coverage-report outputs/vulzoo-coverage-v2.json
 ```
 
 `inventory-vulzoo` never downloads data. It inventories an already approved local clone beneath
 `THESIS_DATA_ROOT`.
+
+`ingest-vulzoo` requires the previously approved complete coverage report and re-verifies its
+content fingerprint while reading local data. It writes only to an initialized SQLite database
+beneath `THESIS_DATA_ROOT`; EPSS and exploit payloads remain excluded.
 
 ## Experiment ladder
 

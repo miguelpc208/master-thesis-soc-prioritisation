@@ -47,7 +47,7 @@ class SchemaTests(unittest.TestCase):
             self.assertIn("ingestion_rejection", tables)
             self.assertIn("cve_cwe", tables)
             self.assertIn("cve_cpe", tables)
-            self.assertEqual(versions, [1, 2])
+            self.assertEqual(versions, [1, 2, 3])
             self.assertTrue(
                 {"vulnerability_status", "source_snapshot_id", "ingestion_run_id"}
                 <= cve_columns
@@ -167,7 +167,7 @@ class SchemaTests(unittest.TestCase):
             self.assertNotIn("payload_json", rejection_columns)
             self.assertNotIn("raw_record", rejection_columns)
 
-    def test_existing_version_one_database_upgrades_to_version_two(self) -> None:
+    def test_existing_version_one_database_upgrades_to_latest_version(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "thesis.sqlite"
 
@@ -186,7 +186,127 @@ class SchemaTests(unittest.TestCase):
                     )
                 ]
 
-            self.assertEqual(versions, [1, 2])
+            self.assertEqual(versions, [1, 2, 3])
+
+    def test_version_two_upgrade_preserves_existing_cpe_relationships(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "thesis.sqlite"
+            timestamp = "2026-08-14T00:00:00Z"
+
+            with closing(sqlite3.connect(path)) as connection:
+                connection.execute("PRAGMA foreign_keys = ON")
+                for name in ("001_initial.sql", "002_vulnerability_ingestion.sql"):
+                    connection.executescript(
+                        (SCHEMA_ROOT / name).read_text(encoding="utf-8-sig")
+                    )
+                connection.execute(
+                    """
+                    INSERT INTO source_snapshot(
+                        source_snapshot_id, source_name, retrieved_at_utc,
+                        checksum, metadata_json, created_at_utc
+                    ) VALUES (?, ?, ?, ?, ?, ?)
+                    """,
+                    ("snapshot:test", "vulzoo", timestamp, "git:test", "{}", timestamp),
+                )
+                connection.execute(
+                    """
+                    INSERT INTO ingestion_run(
+                        ingestion_run_id, source_snapshot_id, started_at_utc,
+                        status, input_fingerprint_sha256, configuration_json,
+                        created_at_utc
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        "run:test",
+                        "snapshot:test",
+                        timestamp,
+                        "succeeded",
+                        "a" * 64,
+                        "{}",
+                        timestamp,
+                    ),
+                )
+                connection.execute(
+                    """
+                    INSERT INTO cve(cve_id, source_name, retrieved_at_utc, created_at_utc)
+                    VALUES (?, ?, ?, ?)
+                    """,
+                    ("CVE-2024-0001", "nvd", timestamp, timestamp),
+                )
+                connection.execute(
+                    """
+                    INSERT INTO cpe(cpe_id, cpe_uri, source_name, retrieved_at_utc, created_at_utc)
+                    VALUES (?, ?, ?, ?, ?)
+                    """,
+                    ("cpe:test", "cpe:2.3:a:example:product", "nvd", timestamp, timestamp),
+                )
+                connection.execute(
+                    """
+                    INSERT INTO cve_cpe(
+                        cve_cpe_id, cve_id, cpe_id, vulnerable, criteria_id,
+                        version_end_excluding, observed_at_utc, source_name,
+                        retrieved_at_utc, source_snapshot_id, ingestion_run_id,
+                        created_at_utc
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        "mapping:first",
+                        "CVE-2024-0001",
+                        "cpe:test",
+                        1,
+                        "criteria:first",
+                        "2.0",
+                        timestamp,
+                        "nvd",
+                        timestamp,
+                        "snapshot:test",
+                        "run:test",
+                        timestamp,
+                    ),
+                )
+                connection.commit()
+
+            initialise_database(path)
+
+            with closing(sqlite3.connect(path)) as connection:
+                connection.execute("PRAGMA foreign_keys = ON")
+                self.assertEqual(
+                    connection.execute(
+                        "SELECT version_end_excluding FROM cve_cpe"
+                    ).fetchall(),
+                    [("2.0",)],
+                )
+                connection.execute(
+                    """
+                    INSERT INTO cve_cpe(
+                        cve_cpe_id, cve_id, cpe_id, vulnerable, criteria_id,
+                        version_end_excluding, observed_at_utc, source_name,
+                        retrieved_at_utc, source_snapshot_id, ingestion_run_id,
+                        created_at_utc
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        "mapping:second",
+                        "CVE-2024-0001",
+                        "cpe:test",
+                        1,
+                        "criteria:second",
+                        "3.0",
+                        timestamp,
+                        "nvd",
+                        timestamp,
+                        "snapshot:test",
+                        "run:test",
+                        timestamp,
+                    ),
+                )
+                self.assertEqual(
+                    connection.execute(
+                        "SELECT version_end_excluding FROM cve_cpe "
+                        "ORDER BY version_end_excluding"
+                    ).fetchall(),
+                    [("2.0",), ("3.0",)],
+                )
 
 
 if __name__ == "__main__":

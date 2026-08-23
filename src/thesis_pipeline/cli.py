@@ -11,6 +11,7 @@ import sys
 from thesis_pipeline.config import ConfigurationError, load_experiment, load_scenario
 from thesis_pipeline.ingestion.coverage import scan_vulzoo_coverage
 from thesis_pipeline.ingestion.inventory import inventory_vulzoo
+from thesis_pipeline.ingestion.normalise import ingest_vulzoo
 from thesis_pipeline.ingestion.profiling import profile_vulzoo
 from thesis_pipeline.run import project_root, run_experiment
 from thesis_pipeline.storage.schema import initialise_database
@@ -88,6 +89,15 @@ def build_parser() -> argparse.ArgumentParser:
     coverage.add_argument("--max-json-mib", type=int, default=5)
     coverage.add_argument("--rejection-sample-limit", type=int, default=20)
 
+    ingest = subparsers.add_parser(
+        "ingest-vulzoo",
+        help="Normalise approved local NVD, legacy CVE, and KEV records into SQLite",
+    )
+    ingest.add_argument("--config", required=True)
+    ingest.add_argument("--database", required=True)
+    ingest.add_argument("--coverage-report", required=True)
+    ingest.add_argument("--progress-every", type=int, default=10000)
+
     database = subparsers.add_parser(
         "init-db", help="Initialise the versioned SQLite schema outside the repository"
     )
@@ -144,6 +154,15 @@ def main(argv: list[str] | None = None) -> int:
                 rejection_sample_limit=args.rejection_sample_limit,
             )
             print(json.dumps(coverage, indent=2, sort_keys=True))
+            return 0
+        if args.command == "ingest-vulzoo":
+            ingestion = ingest_vulzoo(
+                args.config,
+                args.database,
+                args.coverage_report,
+                progress_every=args.progress_every,
+            )
+            print(json.dumps(ingestion, indent=2, sort_keys=True))
             return 0
         if args.command == "init-db":
             print(initialise_database(args.path))
