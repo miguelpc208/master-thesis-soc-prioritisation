@@ -9,7 +9,7 @@ snapshot.
 | VulZoo | Multi-dimensional public vulnerability data | acquired — approved processed subset | Shallow, processed-first inventory only after approval; capture commit SHA |
 | DiverseVul | Function-level C/C++ vulnerability research labels | acquired — pinned dataset and metadata | Hash both JSONL files; preserve local source boundary and evidence provenance |
 | FIRST EPSS | Date-pinned exploitation probability | Disabled/not downloaded | Bulk daily CSV; record date and model version |
-| CISA KEV | Known-exploitation evidence | Disabled/not downloaded | Preserve `dateAdded`; enforce as-of logic |
+| CISA KEV | Known-exploitation evidence | Acquired inside approved VulZoo snapshot | Preserve `dateAdded`, catalogue date and retrieval time; enforce declared as-of mode |
 | Qualys-like proxy | Transparent comparison only | Disabled | Never call it Qualys data or proprietary score reproduction |
 
 The bundled VulZoo processed snapshot was described upstream as last updated on 2024-07-06 at
@@ -42,6 +42,9 @@ See [VULZOO_PROFILE.md](VULZOO_PROFILE.md) for the reproducible collection, form
 
 See [VULNERABILITY_INGESTION_CONTRACT.md](VULNERABILITY_INGESTION_CONTRACT.md)
 for the approved NVD, CVE and KEV normalisation boundary.
+
+See [TEMPORAL_EVIDENCE_CONTRACT.md](TEMPORAL_EVIDENCE_CONTRACT.md) for strict retained-snapshot
+availability, source-effective reconstruction, conservative date-only handling and claim limits.
 
 ## DiverseVul approved working snapshot
 

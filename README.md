@@ -37,6 +37,7 @@ python -m thesis_pipeline.cli scan-vulzoo-coverage --config configs/data_sources
 python -m thesis_pipeline.cli init-db --path "$env:THESIS_DATA_ROOT\databases\vulzoo-ingestion.sqlite"
 python -m thesis_pipeline.cli ingest-vulzoo --config configs/data_sources.yaml --database "$env:THESIS_DATA_ROOT\databases\vulzoo-ingestion.sqlite" --coverage-report outputs/vulzoo-coverage-v2.json
 python -m thesis_pipeline.cli ingest-diversevul --config configs/data_sources.yaml --database "$env:THESIS_DATA_ROOT\databases\vulzoo-ingestion.sqlite" --acquisition-manifest "$env:THESIS_DATA_ROOT\DiverseVul\manifests\APPROVED-MANIFEST.json" --profile-report outputs/APPROVED-DIVERSEVUL-PROFILE.json
+python -m thesis_pipeline.cli audit-technical-as-of --database "$env:THESIS_DATA_ROOT\databases\vulzoo-ingestion.sqlite" --decision-at "2026-08-24T23:59:59Z" --mode strict_snapshot
 ```
 
 `inventory-vulzoo` never downloads data. It inventories an already approved local clone beneath
@@ -50,6 +51,11 @@ beneath `THESIS_DATA_ROOT`; EPSS and exploit payloads remain excluded.
 read-only profile, and existing VulZoo catalogue before joining function-level research labels to
 canonical CVEs. Raw function source remains exclusively in the approved local JSONL dataset; it is
 never copied into SQLite, Git, logs, or generated reports.
+
+`audit-technical-as-of` opens SQLite read-only and reports which normalized observations are
+eligible at an explicit UTC decision cut-off. `strict_snapshot` uses retained-snapshot availability;
+`source_effective_reconstruction` is an explicitly incomplete historical reconstruction. See
+`docs/TEMPORAL_EVIDENCE_CONTRACT.md` before using either mode.
 
 ## Experiment ladder
 

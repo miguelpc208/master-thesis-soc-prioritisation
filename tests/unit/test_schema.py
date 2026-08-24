@@ -39,6 +39,10 @@ class SchemaTests(unittest.TestCase):
                     row[1]
                     for row in connection.execute("PRAGMA table_info(kev_observation)")
                 }
+                epss_columns = {
+                    row[1]
+                    for row in connection.execute("PRAGMA table_info(epss_observation)")
+                }
 
             self.assertIn("priority_decision", tables)
             self.assertIn("dynamic_exploit_evidence", tables)
@@ -52,7 +56,8 @@ class SchemaTests(unittest.TestCase):
             self.assertIn("diversevul_commit", tables)
             self.assertIn("diversevul_function", tables)
             self.assertIn("diversevul_function_cve", tables)
-            self.assertEqual(versions, [1, 2, 3, 4, 5])
+            self.assertIn("evidence_time_policy", tables)
+            self.assertEqual(versions, [1, 2, 3, 4, 5, 6])
             self.assertTrue(
                 {"vulnerability_status", "source_snapshot_id", "ingestion_run_id"}
                 <= cve_columns
@@ -81,6 +86,10 @@ class SchemaTests(unittest.TestCase):
                     "ingestion_run_id",
                 }
                 <= kev_columns
+            )
+            self.assertTrue(
+                {"source_snapshot_id", "ingestion_run_id"}
+                <= epss_columns
             )
 
     def test_vulnerability_ingestion_constraints_are_enforced(self) -> None:
@@ -341,7 +350,7 @@ class SchemaTests(unittest.TestCase):
                     )
                 ]
 
-            self.assertEqual(versions, [1, 2, 3, 4, 5])
+            self.assertEqual(versions, [1, 2, 3, 4, 5, 6])
 
     def test_version_two_upgrade_preserves_existing_cpe_relationships(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

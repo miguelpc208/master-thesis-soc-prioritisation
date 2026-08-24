@@ -9,6 +9,8 @@ relationship natural keys with criteria/version bounds, preserving distinct obse
 evidence-qualified associations to existing canonical CVEs without copying source-code bodies.
 `005_nvd_configuration_logic.sql` preserves the ordered NVD applicability tree, including parent
 relationships, `AND`/`OR` operators, negation and the exact node containing each CPE match.
+`006_temporal_evidence_contract.sql` adds EPSS snapshot/run provenance, a versioned evidence-time
+policy and a normalized availability view for strict-snapshot and source-effective as-of queries.
 Applied migrations are immutable and recorded in `schema_version`; database initialisation safely
 skips versions already present. Every table has a primary key. Source-derived tables retain provenance
 and retrieval/effective timestamps; synthetic and workflow tables retain a scenario/run identity
@@ -17,7 +19,7 @@ converted to zero/false.
 
 | Domain | Entities |
 | --- | --- |
-| Ingestion provenance | `source_snapshot`, `ingestion_run`, `ingestion_rejection` |
+| Ingestion provenance and time policy | `source_snapshot`, `ingestion_run`, `ingestion_rejection`, `evidence_time_policy`, `technical_evidence_availability` view |
 | Vulnerability intelligence | `cve`, `cvss_observation`, `epss_observation`, `kev_observation`, `cwe`, `cpe`, `cve_cwe`, `cve_cpe`, `cve_configuration_node`, `cve_configuration_match`, `exploit_reference`, `patch_reference`, `attack_mapping` |
 | Function-level research labels | `diversevul_commit`, `diversevul_function`, `diversevul_function_cve` |
 | Organisation | `department`, `business_service`, `application`, `asset`, `asset_service_map`, `data_classification`, `regulatory_scope`, `owner_team` |
@@ -48,3 +50,9 @@ hash per approved JSONL record; raw source text never enters SQLite. `diversevul
 references existing `cve.cve_id` values only and distinguishes explicit metadata-field evidence
 from explicit commit-message evidence. Labels and associations do not establish exploitability,
 asset applicability, business impact or decision-time availability.
+
+`technical_evidence_availability` does not copy observations. It projects each retained CVE, CVSS,
+KEV membership, CPE configuration occurrence, DiverseVul label and future EPSS score onto effective,
+source-observed, local-retrieval, strict-availability and reconstruction-availability timestamps.
+Queries must filter the selected availability field at or before `priority_decision.decision_at_utc`.
+Single-snapshot reconstruction remains version-incomplete even when the date filter passes.

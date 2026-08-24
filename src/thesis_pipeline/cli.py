@@ -14,6 +14,7 @@ from thesis_pipeline.ingestion.diversevul import ingest_diversevul
 from thesis_pipeline.ingestion.inventory import inventory_vulzoo
 from thesis_pipeline.ingestion.normalise import ingest_vulzoo
 from thesis_pipeline.ingestion.profiling import profile_vulzoo
+from thesis_pipeline.quality.evidence_as_of import AS_OF_MODES, audit_technical_evidence_as_of
 from thesis_pipeline.run import project_root, run_experiment
 from thesis_pipeline.storage.schema import initialise_database
 from thesis_pipeline.synthetic_org.generator import generate_dataset
@@ -109,6 +110,14 @@ def build_parser() -> argparse.ArgumentParser:
     diversevul.add_argument("--profile-report", required=True)
     diversevul.add_argument("--progress-every", type=int, default=25000)
 
+    temporal = subparsers.add_parser(
+        "audit-technical-as-of",
+        help="Audit technical evidence available at a UTC decision cutoff without mutation",
+    )
+    temporal.add_argument("--database", required=True)
+    temporal.add_argument("--decision-at", required=True)
+    temporal.add_argument("--mode", choices=AS_OF_MODES, default="strict_snapshot")
+
     database = subparsers.add_parser(
         "init-db", help="Initialise the versioned SQLite schema outside the repository"
     )
@@ -184,6 +193,14 @@ def main(argv: list[str] | None = None) -> int:
                 progress_every=args.progress_every,
             )
             print(json.dumps(ingestion, indent=2, sort_keys=True))
+            return 0
+        if args.command == "audit-technical-as-of":
+            audit = audit_technical_evidence_as_of(
+                args.database,
+                args.decision_at,
+                mode=args.mode,
+            )
+            print(json.dumps(audit, indent=2, sort_keys=True))
             return 0
         if args.command == "init-db":
             print(initialise_database(args.path))

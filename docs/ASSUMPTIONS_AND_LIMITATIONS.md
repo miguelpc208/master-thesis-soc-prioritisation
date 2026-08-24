@@ -14,7 +14,12 @@
 - No real organisation, Qualys feed, or enterprise SOC measurement is included.
 - Synthetic CVSS/EPSS/KEV/actionability are engineering fixtures.
 - The Phase 2 scheduler is a simplified deterministic batch queue.
-- No external-data ingestion, temporal snapshot panel, E3 optimisation, or E4 scheduler is complete.
+- VulZoo and DiverseVul ingestion is complete for the approved snapshots, but exact historical
+  NVD/KEV version panels and the FIRST EPSS daily panel are not yet complete.
+- The as-of view prevents look-ahead under its declared mode; source-effective reconstruction from
+  one retained snapshot is not exact historical ground truth.
+- The real technical SQLite observations are not yet wired into the synthetic experiment runner.
+- E3 optimisation and the full E4 scheduler are not complete.
 - Smoke metrics are not research results and cannot estimate actual business impact.
 - Runtime distributions and SLA thresholds require literature/expert calibration.
 - E5/E6 add governance, ethics, validity, and scope risk; both are disabled.
@@ -24,4 +29,3 @@
 Workload intensity, duplicate rate, team capacity, service-time distributions, business criticality,
 internet exposure, patch windows/freezes, risk acceptance, scenario horizon, weighting choices, and
 label prevalence.
-

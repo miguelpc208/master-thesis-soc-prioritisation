@@ -58,8 +58,15 @@ schema.
 | `logical_operator` | nullable enum | Source-provided `AND` or `OR`; null only when the source omits it |
 | `negate` | nullable boolean | Source-provided logical negation; null only when omitted |
 | `node_kind` | enum | Top-level `configuration` or nested logical `node` |
+| `effective_at_utc` | nullable UTC datetime | Time the source says a fact applies; null when source time is unverified |
+| `source_observed_at_utc` | nullable UTC datetime | Version/catalogue time of the retained source observation |
+| `strict_available_at_utc` | UTC datetime | Earliest audited time the approved local snapshot may expose the observation |
+| `reconstruction_available_at_utc` | UTC datetime | Conservative source-time cut-off for explicitly incomplete reconstruction |
+| `operational_role` | enum | `catalogue`, `prioritisation`, `applicability`, or offline-only `offline_label` |
+| `history_status` | enum | `single_snapshot`, `unknown_snapshot`, or required `daily_panel` |
 
-See `VULNERABILITY_INGESTION_CONTRACT.md` for precedence, temporal and rejection rules.
+See `VULNERABILITY_INGESTION_CONTRACT.md` for precedence and rejection rules and
+`TEMPORAL_EVIDENCE_CONTRACT.md` for the as-of modes and claim boundary.
 
 ## DiverseVul function-research fields
 
