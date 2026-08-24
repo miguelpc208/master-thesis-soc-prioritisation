@@ -47,10 +47,12 @@ class SchemaTests(unittest.TestCase):
             self.assertIn("ingestion_rejection", tables)
             self.assertIn("cve_cwe", tables)
             self.assertIn("cve_cpe", tables)
+            self.assertIn("cve_configuration_node", tables)
+            self.assertIn("cve_configuration_match", tables)
             self.assertIn("diversevul_commit", tables)
             self.assertIn("diversevul_function", tables)
             self.assertIn("diversevul_function_cve", tables)
-            self.assertEqual(versions, [1, 2, 3, 4])
+            self.assertEqual(versions, [1, 2, 3, 4, 5])
             self.assertTrue(
                 {"vulnerability_status", "source_snapshot_id", "ingestion_run_id"}
                 <= cve_columns
@@ -170,6 +172,156 @@ class SchemaTests(unittest.TestCase):
             self.assertNotIn("payload_json", rejection_columns)
             self.assertNotIn("raw_record", rejection_columns)
 
+    def test_configuration_tree_rejects_cross_snapshot_relationships(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            path = initialise_database(Path(directory) / "thesis.sqlite")
+            timestamp = "2026-08-24T00:00:00Z"
+
+            with closing(sqlite3.connect(path)) as connection:
+                connection.execute("PRAGMA foreign_keys = ON")
+                for suffix in ("one", "two"):
+                    connection.execute(
+                        """
+                        INSERT INTO source_snapshot(
+                            source_snapshot_id, source_name, retrieved_at_utc,
+                            checksum, metadata_json, created_at_utc
+                        ) VALUES (?, ?, ?, ?, ?, ?)
+                        """,
+                        (
+                            f"snapshot:{suffix}",
+                            "vulzoo",
+                            timestamp,
+                            f"git:{suffix}",
+                            "{}",
+                            timestamp,
+                        ),
+                    )
+                    connection.execute(
+                        """
+                        INSERT INTO ingestion_run(
+                            ingestion_run_id, source_snapshot_id, started_at_utc,
+                            status, input_fingerprint_sha256, configuration_json,
+                            created_at_utc
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?)
+                        """,
+                        (
+                            f"run:{suffix}",
+                            f"snapshot:{suffix}",
+                            timestamp,
+                            "succeeded",
+                            suffix[0] * 64,
+                            "{}",
+                            timestamp,
+                        ),
+                    )
+
+                connection.execute(
+                    """
+                    INSERT INTO cve(
+                        cve_id, source_name, retrieved_at_utc, created_at_utc,
+                        source_snapshot_id, ingestion_run_id
+                    ) VALUES (?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        "CVE-2024-0001",
+                        "nvd",
+                        timestamp,
+                        timestamp,
+                        "snapshot:one",
+                        "run:one",
+                    ),
+                )
+                connection.execute(
+                    """
+                    INSERT INTO cpe(
+                        cpe_id, cpe_uri, source_name, retrieved_at_utc,
+                        created_at_utc, source_snapshot_id, ingestion_run_id
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        "cpe:one",
+                        "cpe:2.3:a:example:product:*:*:*:*:*:*:*:*",
+                        "nvd",
+                        timestamp,
+                        timestamp,
+                        "snapshot:one",
+                        "run:one",
+                    ),
+                )
+                connection.execute(
+                    """
+                    INSERT INTO cve_cpe(
+                        cve_cpe_id, cve_id, cpe_id, vulnerable,
+                        observed_at_utc, source_name, retrieved_at_utc,
+                        source_snapshot_id, ingestion_run_id, created_at_utc
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        "mapping:one",
+                        "CVE-2024-0001",
+                        "cpe:one",
+                        1,
+                        timestamp,
+                        "nvd",
+                        timestamp,
+                        "snapshot:one",
+                        "run:one",
+                        timestamp,
+                    ),
+                )
+                connection.execute(
+                    """
+                    INSERT INTO cve_configuration_node(
+                        cve_configuration_node_id, cve_id, node_kind,
+                        source_path, depth, sibling_position, logical_operator,
+                        negate, observed_at_utc, source_name, retrieved_at_utc,
+                        source_snapshot_id, ingestion_run_id, created_at_utc
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        "node:one",
+                        "CVE-2024-0001",
+                        "configuration",
+                        "configurations[0]",
+                        0,
+                        0,
+                        "OR",
+                        0,
+                        timestamp,
+                        "nvd",
+                        timestamp,
+                        "snapshot:one",
+                        "run:one",
+                        timestamp,
+                    ),
+                )
+
+                with self.assertRaisesRegex(
+                    sqlite3.IntegrityError,
+                    "configuration match node does not match CVE snapshot",
+                ):
+                    connection.execute(
+                        """
+                        INSERT INTO cve_configuration_match(
+                            cve_configuration_match_id, cve_id,
+                            cve_configuration_node_id, cve_cpe_id, source_path,
+                            match_position, source_snapshot_id, ingestion_run_id,
+                            created_at_utc
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        """,
+                        (
+                            "match:invalid",
+                            "CVE-2024-0001",
+                            "node:one",
+                            "mapping:one",
+                            "configurations[0].cpeMatch[0]",
+                            0,
+                            "snapshot:two",
+                            "run:two",
+                            timestamp,
+                        ),
+                    )
+
     def test_existing_version_one_database_upgrades_to_latest_version(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "thesis.sqlite"
@@ -189,7 +341,7 @@ class SchemaTests(unittest.TestCase):
                     )
                 ]
 
-            self.assertEqual(versions, [1, 2, 3, 4])
+            self.assertEqual(versions, [1, 2, 3, 4, 5])
 
     def test_version_two_upgrade_preserves_existing_cpe_relationships(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

@@ -53,6 +53,11 @@ schema.
 | `date_added` | date | CISA KEV membership effective date |
 | `catalogue_date` | date | Dated KEV catalogue version containing the observation |
 | `vulnerable` | boolean | NVD CPE match flag; does not by itself prove asset exposure |
+| `source_path` | string | Exact ordered path of an NVD configuration node or CPE match |
+| `parent_node_id` | nullable string FK | Parent required to reconstruct the NVD applicability tree |
+| `logical_operator` | nullable enum | Source-provided `AND` or `OR`; null only when the source omits it |
+| `negate` | nullable boolean | Source-provided logical negation; null only when omitted |
+| `node_kind` | enum | Top-level `configuration` or nested logical `node` |
 
 See `VULNERABILITY_INGESTION_CONTRACT.md` for precedence, temporal and rejection rules.
 

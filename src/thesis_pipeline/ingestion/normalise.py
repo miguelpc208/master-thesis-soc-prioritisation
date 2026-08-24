@@ -29,10 +29,11 @@ from thesis_pipeline.ingestion.coverage import (
 from thesis_pipeline.ingestion.source import load_vulzoo_source_config, resolve_vulzoo_root
 from thesis_pipeline.storage.schema import initialise_database
 
-INGESTION_CONTRACT = "vulzoo-ingestion-v1"
+INGESTION_CONTRACT = "vulzoo-ingestion-v2"
 EXPECTED_COVERAGE_CONTRACT = "vulzoo-coverage-v2"
 SUPPORTED_CVSS_VERSIONS = {"2.0", "3.0", "3.1", "4.0"}
 SUPPORTED_SEVERITIES = {"NONE", "LOW", "MEDIUM", "HIGH", "CRITICAL"}
+SUPPORTED_CONFIGURATION_OPERATORS = {"AND", "OR"}
 SHA256_PATTERN = re.compile(r"^[0-9a-f]{64}$")
 
 
@@ -506,7 +507,7 @@ def _insert_cpe_match(
     match: dict[str, Any],
     relative_path: str,
     digest: str,
-) -> None:
+) -> str | None:
     criteria = match.get("criteria")
     vulnerable = match.get("vulnerable")
     if not isinstance(criteria, str) or not criteria.startswith("cpe:"):
@@ -517,7 +518,7 @@ def _insert_cpe_match(
             source_record_id=cve_id,
             field_name="configurations.*.cpeMatch.*.criteria",
         )
-        return
+        return None
     if not isinstance(vulnerable, bool):
         context.rejections.add(
             "cpe_invalid_vulnerable_flag",
@@ -526,7 +527,7 @@ def _insert_cpe_match(
             source_record_id=cve_id,
             field_name="configurations.*.cpeMatch.*.vulnerable",
         )
-        return
+        return None
 
     cpe_id = _stable_id("cpe", criteria)
     previous_changes = context.connection.total_changes
@@ -560,6 +561,16 @@ def _insert_cpe_match(
             "versionEndExcluding",
         )
     )
+    cve_cpe_id = _stable_id(
+        "cve_cpe",
+        cve_id,
+        cpe_id,
+        vulnerable,
+        criteria_id,
+        *version_bounds,
+        observed_at_utc,
+        context.source_snapshot_id,
+    )
     previous_changes = context.connection.total_changes
     context.connection.execute(
         """
@@ -572,16 +583,7 @@ def _insert_cpe_match(
         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (
-            _stable_id(
-                "cve_cpe",
-                cve_id,
-                cpe_id,
-                vulnerable,
-                criteria_id,
-                *version_bounds,
-                observed_at_utc,
-                context.source_snapshot_id,
-            ),
+            cve_cpe_id,
             cve_id,
             cpe_id,
             int(vulnerable),
@@ -597,6 +599,201 @@ def _insert_cpe_match(
     )
     if context.connection.total_changes > previous_changes:
         context.row_counts["cve_cpe"] += 1
+    return cve_cpe_id
+
+
+def _configuration_operator(
+    context: IngestionContext,
+    value: Any,
+    relative_path: str,
+    digest: str,
+    cve_id: str,
+    source_path: str,
+) -> str | None:
+    if value is None:
+        return None
+    if isinstance(value, str) and value.upper() in SUPPORTED_CONFIGURATION_OPERATORS:
+        return value.upper()
+    context.rejections.add(
+        "cpe_configuration_invalid_operator",
+        relative_path,
+        digest,
+        source_record_id=cve_id,
+        field_name=f"{source_path}.operator",
+    )
+    return None
+
+
+def _configuration_negate(
+    context: IngestionContext,
+    value: Any,
+    relative_path: str,
+    digest: str,
+    cve_id: str,
+    source_path: str,
+) -> int | None:
+    if value is None:
+        return None
+    if isinstance(value, bool):
+        return int(value)
+    context.rejections.add(
+        "cpe_configuration_invalid_negate",
+        relative_path,
+        digest,
+        source_record_id=cve_id,
+        field_name=f"{source_path}.negate",
+    )
+    return None
+
+
+def _insert_configuration_node(
+    context: IngestionContext,
+    cve_id: str,
+    observed_at_utc: str,
+    node: dict[str, Any],
+    *,
+    parent_node_id: str | None,
+    node_kind: str,
+    source_path: str,
+    depth: int,
+    sibling_position: int,
+    relative_path: str,
+    digest: str,
+) -> None:
+    operator = _configuration_operator(
+        context,
+        node.get("operator"),
+        relative_path,
+        digest,
+        cve_id,
+        source_path,
+    )
+    negate = _configuration_negate(
+        context,
+        node.get("negate"),
+        relative_path,
+        digest,
+        cve_id,
+        source_path,
+    )
+    node_id = _stable_id(
+        "cve_configuration_node",
+        cve_id,
+        source_path,
+        context.source_snapshot_id,
+    )
+    previous_changes = context.connection.total_changes
+    context.connection.execute(
+        """
+        INSERT OR IGNORE INTO cve_configuration_node(
+            cve_configuration_node_id, cve_id, parent_node_id, node_kind,
+            source_path, depth, sibling_position, logical_operator, negate,
+            observed_at_utc, source_name, retrieved_at_utc, source_snapshot_id,
+            ingestion_run_id, created_at_utc
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        (
+            node_id,
+            cve_id,
+            parent_node_id,
+            node_kind,
+            source_path,
+            depth,
+            sibling_position,
+            operator,
+            negate,
+            observed_at_utc,
+            "nvd",
+            context.retrieved_at_utc,
+            context.source_snapshot_id,
+            context.ingestion_run_id,
+            _now_utc(),
+        ),
+    )
+    if context.connection.total_changes > previous_changes:
+        context.row_counts["cve_configuration_node"] += 1
+
+    matches = node.get("cpeMatch")
+    if isinstance(matches, list):
+        for match_position, match in enumerate(matches):
+            match_path = f"{source_path}.cpeMatch[{match_position}]"
+            if not isinstance(match, dict):
+                context.rejections.add(
+                    "cpe_match_not_mapping",
+                    relative_path,
+                    digest,
+                    source_record_id=cve_id,
+                    field_name=match_path,
+                )
+                continue
+            cve_cpe_id = _insert_cpe_match(
+                context,
+                cve_id,
+                observed_at_utc,
+                match,
+                relative_path,
+                digest,
+            )
+            if cve_cpe_id is None:
+                continue
+            previous_changes = context.connection.total_changes
+            context.connection.execute(
+                """
+                INSERT OR IGNORE INTO cve_configuration_match(
+                    cve_configuration_match_id, cve_id,
+                    cve_configuration_node_id, cve_cpe_id, source_path,
+                    match_position, source_snapshot_id, ingestion_run_id,
+                    created_at_utc
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    _stable_id(
+                        "cve_configuration_match",
+                        cve_id,
+                        match_path,
+                        context.source_snapshot_id,
+                    ),
+                    cve_id,
+                    node_id,
+                    cve_cpe_id,
+                    match_path,
+                    match_position,
+                    context.source_snapshot_id,
+                    context.ingestion_run_id,
+                    _now_utc(),
+                ),
+            )
+            if context.connection.total_changes > previous_changes:
+                context.row_counts["cve_configuration_match"] += 1
+
+    for child_key in ("nodes", "children"):
+        children = node.get(child_key)
+        if not isinstance(children, list):
+            continue
+        for child_position, child in enumerate(children):
+            child_path = f"{source_path}.{child_key}[{child_position}]"
+            if not isinstance(child, dict):
+                context.rejections.add(
+                    "cpe_configuration_node_not_mapping",
+                    relative_path,
+                    digest,
+                    source_record_id=cve_id,
+                    field_name=child_path,
+                )
+                continue
+            _insert_configuration_node(
+                context,
+                cve_id,
+                observed_at_utc,
+                child,
+                parent_node_id=node_id,
+                node_kind="node",
+                source_path=child_path,
+                depth=depth + 1,
+                sibling_position=child_position,
+                relative_path=relative_path,
+                digest=digest,
+            )
 
 
 def _insert_cpe(
@@ -610,22 +807,30 @@ def _insert_cpe(
     configurations = document.get("configurations")
     if not isinstance(configurations, list):
         return
-    pending = list(configurations)
-    while pending:
-        node = pending.pop()
-        if not isinstance(node, dict):
+    for configuration_position, configuration in enumerate(configurations):
+        source_path = f"configurations[{configuration_position}]"
+        if not isinstance(configuration, dict):
+            context.rejections.add(
+                "cpe_configuration_not_mapping",
+                relative_path,
+                digest,
+                source_record_id=cve_id,
+                field_name=source_path,
+            )
             continue
-        child_nodes = node.get("nodes")
-        if isinstance(child_nodes, list):
-            pending.extend(child_nodes)
-        matches = node.get("cpeMatch")
-        if not isinstance(matches, list):
-            continue
-        for match in matches:
-            if isinstance(match, dict):
-                _insert_cpe_match(
-                    context, cve_id, observed_at_utc, match, relative_path, digest
-                )
+        _insert_configuration_node(
+            context,
+            cve_id,
+            observed_at_utc,
+            configuration,
+            parent_node_id=None,
+            node_kind="configuration",
+            source_path=source_path,
+            depth=0,
+            sibling_position=configuration_position,
+            relative_path=relative_path,
+            digest=digest,
+        )
 
 
 def _ingest_nvd(context: IngestionContext, collection: Path) -> None:

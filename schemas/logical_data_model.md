@@ -7,6 +7,8 @@ normalised CVE-to-CWE/CPE relations, and the additional NVD/KEV fields required 
 relationship natural keys with criteria/version bounds, preserving distinct observations.
 `004_diversevul_integration.sql` adds pinned research-commit metadata, function-label metadata and
 evidence-qualified associations to existing canonical CVEs without copying source-code bodies.
+`005_nvd_configuration_logic.sql` preserves the ordered NVD applicability tree, including parent
+relationships, `AND`/`OR` operators, negation and the exact node containing each CPE match.
 Applied migrations are immutable and recorded in `schema_version`; database initialisation safely
 skips versions already present. Every table has a primary key. Source-derived tables retain provenance
 and retrieval/effective timestamps; synthetic and workflow tables retain a scenario/run identity
@@ -16,7 +18,7 @@ converted to zero/false.
 | Domain | Entities |
 | --- | --- |
 | Ingestion provenance | `source_snapshot`, `ingestion_run`, `ingestion_rejection` |
-| Vulnerability intelligence | `cve`, `cvss_observation`, `epss_observation`, `kev_observation`, `cwe`, `cpe`, `cve_cwe`, `cve_cpe`, `exploit_reference`, `patch_reference`, `attack_mapping` |
+| Vulnerability intelligence | `cve`, `cvss_observation`, `epss_observation`, `kev_observation`, `cwe`, `cpe`, `cve_cwe`, `cve_cpe`, `cve_configuration_node`, `cve_configuration_match`, `exploit_reference`, `patch_reference`, `attack_mapping` |
 | Function-level research labels | `diversevul_commit`, `diversevul_function`, `diversevul_function_cve` |
 | Organisation | `department`, `business_service`, `application`, `asset`, `asset_service_map`, `data_classification`, `regulatory_scope`, `owner_team` |
 | Findings/workflow | `vulnerability_finding`, `alert`, `case_ticket`, `triage_action`, `remediation_action`, `risk_acceptance`, `maintenance_window` |
@@ -34,6 +36,11 @@ with `observed_at <= decision_at`.
 `ingestion_run` records a deterministic input fingerprint and accepted/rejected counts. Rejections
 retain only relative paths, identifiers, reason codes and hashes; raw rejected records are not
 copied into the database.
+
+`cve_configuration_node` reconstructs the ordered NVD applicability tree for one CVE and source
+snapshot. `cve_configuration_match` attaches each source occurrence to the corresponding
+normalised `cve_cpe` relationship. The tree preserves source logic but does not itself prove that
+an organisational asset has the product and version required by that logic.
 
 `diversevul_commit` stores exact project/commit identities and field-authoritative CVEs.
 `diversevul_function` stores one research-labelled source locator, bounded annotations and function

@@ -69,8 +69,12 @@ class VulZooIngestionTests(unittest.TestCase):
                     ],
                     "configurations": [
                         {
+                            "operator": "AND",
+                            "negate": False,
                             "nodes": [
                                 {
+                                    "operator": "OR",
+                                    "negate": False,
                                     "cpeMatch": [
                                         {
                                             "vulnerable": True,
@@ -88,8 +92,27 @@ class VulZooIngestionTests(unittest.TestCase):
                                             "matchCriteriaId": "criteria-2",
                                             "versionEndExcluding": "3.0",
                                         },
-                                    ]
-                                }
+                                    ],
+                                },
+                                {
+                                    "operator": "OR",
+                                    "negate": True,
+                                    "children": [
+                                        {
+                                            "operator": "AND",
+                                            "negate": False,
+                                            "cpeMatch": [
+                                                {
+                                                    "vulnerable": False,
+                                                    "criteria": (
+                                                        "cpe:2.3:o:example:platform:*:*:*:*:*:*:*:*"
+                                                    ),
+                                                    "matchCriteriaId": "criteria-3",
+                                                }
+                                            ],
+                                        }
+                                    ],
+                                },
                             ]
                         }
                     ],
@@ -197,7 +220,7 @@ class VulZooIngestionTests(unittest.TestCase):
         result = ingest_vulzoo(self.config, self.database, self.report)
         connection = self.connect()
 
-        self.assertEqual(result["contract"], "vulzoo-ingestion-v1")
+        self.assertEqual(result["contract"], "vulzoo-ingestion-v2")
         self.assertEqual(
             result["source_counts"]["nvd"], {"accepted_records": 1, "rejected_records": 2}
         )
@@ -207,9 +230,11 @@ class VulZooIngestionTests(unittest.TestCase):
         self.assertEqual(
             result["new_rows"],
             {
-                "cpe": 1,
+                "cpe": 2,
                 "cve": 3,
-                "cve_cpe": 2,
+                "cve_configuration_match": 3,
+                "cve_configuration_node": 4,
+                "cve_cpe": 3,
                 "cve_cwe": 1,
                 "cvss_observation": 2,
                 "cwe": 1,
@@ -247,9 +272,43 @@ class VulZooIngestionTests(unittest.TestCase):
         self.assertEqual(connection.execute("SELECT cwe_id FROM cwe").fetchall(), [("CWE-79",)])
         self.assertEqual(
             connection.execute(
-                "SELECT version_end_excluding FROM cve_cpe ORDER BY version_end_excluding"
+                "SELECT version_end_excluding FROM cve_cpe "
+                "WHERE vulnerable = 1 ORDER BY version_end_excluding"
             ).fetchall(),
             [("2.0",), ("3.0",)],
+        )
+        configuration_nodes = connection.execute(
+            """
+            SELECT source_path, depth, logical_operator, negate,
+                   parent_node_id IS NULL
+            FROM cve_configuration_node
+            ORDER BY source_path
+            """
+        ).fetchall()
+        self.assertEqual(
+            configuration_nodes,
+            [
+                ("configurations[0]", 0, "AND", 0, 1),
+                ("configurations[0].nodes[0]", 1, "OR", 0, 0),
+                ("configurations[0].nodes[1]", 1, "OR", 1, 0),
+                ("configurations[0].nodes[1].children[0]", 2, "AND", 0, 0),
+            ],
+        )
+        configuration_matches = connection.execute(
+            """
+            SELECT m.source_path, cc.vulnerable
+            FROM cve_configuration_match AS m
+            JOIN cve_cpe AS cc ON cc.cve_cpe_id = m.cve_cpe_id
+            ORDER BY m.source_path
+            """
+        ).fetchall()
+        self.assertEqual(
+            configuration_matches,
+            [
+                ("configurations[0].nodes[0].cpeMatch[0]", 1),
+                ("configurations[0].nodes[0].cpeMatch[1]", 1),
+                ("configurations[0].nodes[1].children[0].cpeMatch[0]", 0),
+            ],
         )
         self.assertEqual(
             connection.execute("SELECT COUNT(*) FROM epss_observation").fetchone(), (0,)
@@ -289,6 +348,12 @@ class VulZooIngestionTests(unittest.TestCase):
             connection.execute("SELECT COUNT(*) FROM kev_observation").fetchone(), (2,)
         )
         self.assertEqual(
+            connection.execute("SELECT COUNT(*) FROM cve_configuration_node").fetchone(), (4,)
+        )
+        self.assertEqual(
+            connection.execute("SELECT COUNT(*) FROM cve_configuration_match").fetchone(), (3,)
+        )
+        self.assertEqual(
             connection.execute("SELECT COUNT(*) FROM ingestion_rejection").fetchone(), (4,)
         )
 
@@ -309,6 +374,8 @@ class VulZooIngestionTests(unittest.TestCase):
             "cpe",
             "cve_cwe",
             "cve_cpe",
+            "cve_configuration_node",
+            "cve_configuration_match",
             "ingestion_rejection",
         ):
             self.assertEqual(connection.execute(f"SELECT COUNT(*) FROM {table}").fetchone(), (0,))
