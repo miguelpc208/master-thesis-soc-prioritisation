@@ -16,8 +16,12 @@
 - The Phase 2 scheduler is a simplified deterministic batch queue.
 - VulZoo, DiverseVul and the 15-day FIRST EPSS panel are complete for their approved snapshots and
   scenario window; exact historical NVD/KEV version panels remain unavailable.
-- Historical January 2026 EPSS files were acquired locally in August 2026 and therefore support
-  source-effective reconstruction, not strict January local availability or ground-truth claims.
+- The active March-April 2025 EPSS panel and retained January 2026 archive were acquired locally in
+  August 2026 and therefore support source-effective reconstruction, not strict historical local
+  availability or ground-truth claims. Scenario alignment reduces NVD/KEV snapshot staleness without
+  recreating complete historical NVD/KEV versions.
+- None of the 76,615 legacy-only canonical CVEs has a safely recoverable source publication date;
+  one offset-free timestamp remains ambiguous and must not be silently interpreted as UTC.
 - The as-of view prevents look-ahead under its declared mode; source-effective reconstruction from
   one retained snapshot is not exact historical ground truth.
 - The real technical SQLite observations are not yet wired into the synthetic experiment runner.

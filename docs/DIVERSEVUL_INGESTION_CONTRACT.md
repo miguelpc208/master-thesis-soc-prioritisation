@@ -86,7 +86,8 @@ rejection tables, stdout or generated reports.
 
 `target=1` and `target=0` are source-provided research labels. They are not proof of operational
 vulnerability presence, successful exploitation, production exposure, exploit availability,
-business impact or temporal availability. FIRST EPSS and Exploit-DB payloads remain excluded.
+business impact or temporal availability. FIRST EPSS is integrated under its separate dated-panel
+contract; Exploit-DB payloads remain excluded.
 
 ## Atomicity and migration
 

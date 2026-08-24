@@ -54,7 +54,7 @@ from explicit commit-message evidence. Labels and associations do not establish 
 asset applicability, business impact or decision-time availability.
 
 `technical_evidence_availability` does not copy observations. It projects each retained CVE, CVSS,
-KEV membership, CPE configuration occurrence, DiverseVul label and future EPSS score onto effective,
+KEV membership, CPE configuration occurrence, DiverseVul label and retained EPSS score onto effective,
 source-observed, local-retrieval, strict-availability and reconstruction-availability timestamps.
 Queries must filter the selected availability field at or before `priority_decision.decision_at_utc`.
 Single-snapshot reconstruction remains version-incomplete even when the date filter passes.

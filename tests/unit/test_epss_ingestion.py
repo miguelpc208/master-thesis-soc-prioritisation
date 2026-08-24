@@ -79,9 +79,11 @@ class EpssIngestionTests(unittest.TestCase):
             writer.writerows(rows)
         return path
 
-    def _write_documents(self) -> None:
+    def _write_documents(self, first: date | None = None) -> None:
         files = []
-        first = date(2025, 12, 31)
+        if first is None:
+            first = date(2025, 12, 31)
+        last = first + timedelta(days=1)
         canonical = {"CVE-2024-0001", "CVE-2024-0002", "CVE-2024-0003"}
 
         for offset in range(2):
@@ -115,8 +117,8 @@ class EpssIngestionTests(unittest.TestCase):
 
         fingerprint = _panel_fingerprint(
             self.archive_commit,
-            "2025-12-31",
-            "2026-01-01",
+            first.isoformat(),
+            last.isoformat(),
             self.model_version,
             files,
         )
@@ -128,9 +130,9 @@ class EpssIngestionTests(unittest.TestCase):
             "upstream_commit": self.archive_commit,
             "checksum": f"sha256:{fingerprint}",
             "local_relative_path": "snapshots/epss",
-            "panel_relative_path": "panels/2025-12-31_to_2026-01-01",
-            "panel_start_date": "2025-12-31",
-            "panel_end_date": "2026-01-01",
+            "panel_relative_path": self.panel.relative_to(self.epss_root).as_posix(),
+            "panel_start_date": first.isoformat(),
+            "panel_end_date": last.isoformat(),
             "enabled": True,
         }
         self.config.write_text(yaml.safe_dump({"sources": {"epss": source}}), encoding="utf-8")
@@ -142,8 +144,8 @@ class EpssIngestionTests(unittest.TestCase):
                 "archive_commit": self.archive_commit,
             },
             "panel": {
-                "first_score_date": "2025-12-31",
-                "last_score_date": "2026-01-01",
+                "first_score_date": first.isoformat(),
+                "last_score_date": last.isoformat(),
                 "days": 2,
                 "model_version": self.model_version,
                 "temporal_mode": "source_effective_reconstruction",
@@ -233,6 +235,86 @@ class EpssIngestionTests(unittest.TestCase):
         self.assertEqual(first["totals"]["new_observations"], 4)
         self.assertEqual(second["totals"]["new_observations"], 0)
         self.assertEqual(counts, (2, 4, 4))
+
+    def test_new_panel_preserves_existing_dates_observations_and_provenance(self) -> None:
+        archived = self._ingest()
+        self.panel = self.epss_root / "panels" / "2025-03-21_to_2025-03-22"
+        self.panel.mkdir()
+        self._write_daily(
+            "2025-03-21",
+            [
+                ("CVE-2024-0001", "0.4", "0.5"),
+                ("CVE-2024-0002", "0.3", "0.4"),
+                ("CVE-2026-9999", "0.1", "0.2"),
+            ],
+        )
+        self._write_daily(
+            "2025-03-22",
+            [
+                ("CVE-2024-0001", "0.5", "0.6"),
+                ("CVE-2024-0003", "0.6", "0.7"),
+                ("CVE-2026-9999", "0.2", "0.3"),
+            ],
+        )
+        self._write_documents(date(2025, 3, 21))
+
+        aligned = self._ingest()
+        reconstruction = audit_technical_evidence_as_of(
+            self.database,
+            "2025-03-22T09:00:00Z",
+            mode="source_effective_reconstruction",
+        )
+        strict = audit_technical_evidence_as_of(
+            self.database,
+            "2025-03-22T09:00:00Z",
+            mode="strict_snapshot",
+        )
+        reconstructed_epss = next(
+            entry for entry in reconstruction["evidence"] if entry["evidence_kind"] == "epss_score"
+        )
+        strict_epss = next(
+            entry for entry in strict["evidence"] if entry["evidence_kind"] == "epss_score"
+        )
+
+        with self._connection() as connection:
+            daily_counts = connection.execute(
+                "SELECT score_date, COUNT(*) FROM epss_observation "
+                "GROUP BY score_date ORDER BY score_date"
+            ).fetchall()
+            snapshots = connection.execute(
+                "SELECT snapshot_date FROM source_snapshot "
+                "WHERE source_name = 'first_epss' ORDER BY snapshot_date"
+            ).fetchall()
+            runs = connection.execute(
+                "SELECT COUNT(*) FROM ingestion_run WHERE status = 'succeeded'"
+            ).fetchone()[0]
+
+        self.assertEqual(archived["totals"]["new_observations"], 4)
+        self.assertEqual(aligned["totals"]["new_observations"], 4)
+        self.assertNotEqual(
+            archived["input_fingerprint_sha256"], aligned["input_fingerprint_sha256"]
+        )
+        self.assertEqual(
+            daily_counts,
+            [
+                ("2025-03-21", 2),
+                ("2025-03-22", 2),
+                ("2025-12-31", 2),
+                ("2026-01-01", 2),
+            ],
+        )
+        self.assertEqual(
+            snapshots,
+            [
+                ("2025-03-21",),
+                ("2025-03-22",),
+                ("2025-12-31",),
+                ("2026-01-01",),
+            ],
+        )
+        self.assertEqual(runs, 4)
+        self.assertEqual(reconstructed_epss["reconstruction_eligible"], 2)
+        self.assertEqual(strict_epss["strict_snapshot_eligible"], 0)
 
     def test_changed_daily_file_is_rejected_before_snapshot_or_run_creation(self) -> None:
         changed = self.panel / "epss_scores-2025-12-31.csv.gz"

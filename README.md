@@ -46,7 +46,8 @@ python -m thesis_pipeline.cli audit-technical-as-of --database "$env:THESIS_DATA
 
 `ingest-vulzoo` requires the previously approved complete coverage report and re-verifies its
 content fingerprint while reading local data. It writes only to an initialized SQLite database
-beneath `THESIS_DATA_ROOT`; EPSS and exploit payloads remain excluded.
+beneath `THESIS_DATA_ROOT`; FIRST EPSS is ingested separately, while exploit payloads remain
+excluded.
 
 `ingest-diversevul` re-verifies the approved acquisition manifest, dataset and metadata checksums,
 read-only profile, and existing VulZoo catalogue before joining function-level research labels to
@@ -57,6 +58,8 @@ never copied into SQLite, Git, logs, or generated reports.
 all compressed daily checksums before joining probability/percentile observations to existing
 VulZoo CVEs. Each day retains separate source and execution provenance; valid CVEs outside the
 pinned VulZoo snapshot are counted and excluded without creating synthetic canonical records.
+The active March-April 2025 panel aligns with the retained NVD and KEV snapshots; the superseded
+January 2026 panel remains archived without influencing the earlier scenario cut-offs.
 
 `audit-technical-as-of` opens SQLite read-only and reports which normalized observations are
 eligible at an explicit UTC decision cut-off. `strict_snapshot` uses retained-snapshot availability;
@@ -105,8 +108,10 @@ MTTR. Current smoke enrichment is synthetic and cannot support causal, predictiv
 claims. DiverseVul labels describe a dated function-level research corpus and do not establish
 exploitation, asset exposure, business impact, or current vulnerability intelligence. The acquired
 snapshot's observed counts differ from the paper's headline counts and must be reported as
-observed. The EPSS panel is complete only for its approved 15-day scenario window; retained NVD and
-KEV sources remain single snapshots, so historical reconstruction is not exact ground truth.
+observed. The active EPSS panel is complete only for its approved March-April 2025 scenario window;
+retained NVD and KEV sources remain single snapshots, so historical reconstruction is not exact
+ground truth. Legacy-only CVEs without recoverable publication timestamps cannot be treated as
+historically eligible by inferring missing dates.
 E3/E4 assumptions require calibration and sensitivity analysis. E5/E6 remain optional.
 
 ## Source anchors

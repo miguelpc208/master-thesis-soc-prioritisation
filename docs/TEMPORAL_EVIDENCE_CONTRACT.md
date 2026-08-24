@@ -82,7 +82,9 @@ limitations and a deterministic SHA-256 fingerprint. Reports belong under ignore
 
 ## Claim boundary
 
-FIRST EPSS supplies a complete dated panel only for the approved 2025-12-31 through 2026-01-14
-scenario window. NVD and KEV remain single retained snapshots, so neither mode establishes exact
-historical ground truth across all evidence. All experiments must record their mode, cut-off and
-approved EPSS model version. See [EPSS_INGESTION_CONTRACT.md](EPSS_INGESTION_CONTRACT.md).
+FIRST EPSS supplies a complete active dated panel for 2025-03-21 through 2025-04-04, covering the
+scenario starting on 2025-03-22. The superseded 2025-12-31 through 2026-01-14 panel remains in the
+database as immutable provenance but is ineligible at the earlier March decision cut-offs. NVD and
+KEV remain single retained snapshots, so neither mode establishes exact historical ground truth
+across all evidence. All experiments must record their mode, cut-off and approved EPSS model
+version. See [EPSS_INGESTION_CONTRACT.md](EPSS_INGESTION_CONTRACT.md).

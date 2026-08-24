@@ -8,7 +8,7 @@ snapshot.
 | --- | --- | --- | --- |
 | VulZoo | Multi-dimensional public vulnerability data | acquired — approved processed subset | Shallow, processed-first inventory only after approval; capture commit SHA |
 | DiverseVul | Function-level C/C++ vulnerability research labels | acquired — pinned dataset and metadata | Hash both JSONL files; preserve local source boundary and evidence provenance |
-| FIRST EPSS | Date-pinned exploitation probability | Acquired — 15-day pinned historical panel | Bulk daily CSV; record date, model version, checksum and retrieval |
+| FIRST EPSS | Date-pinned exploitation probability | Acquired — aligned 15-day panel plus retained archive | Bulk daily CSV; record date, model version, checksum and retrieval |
 | CISA KEV | Known-exploitation evidence | Acquired inside approved VulZoo snapshot | Preserve `dateAdded`, catalogue date and retrieval time; enforce declared as-of mode |
 | Qualys-like proxy | Transparent comparison only | Disabled | Never call it Qualys data or proprietary score reproduction |
 
@@ -68,19 +68,23 @@ availability, source-effective reconstruction, conservative date-only handling a
 See [DIVERSEVUL_INGESTION_CONTRACT.md](DIVERSEVUL_INGESTION_CONTRACT.md) for the
 approved function-to-CVE evidence, provenance, rejection and non-redistribution rules.
 
-## FIRST EPSS approved historical panel
+## FIRST EPSS approved historical panels
 
 - Acquisition date: 2026-08-24; exact UTC retrieval time is recorded in the local manifest.
 - Official historical archive: `https://github.com/empiricalsec/epss_scores`.
 - Pinned archive commit: `3b3ae5b793011090800848c75ceea4cecaa9d309`.
-- Approved contiguous score dates: 2025-12-31 through 2026-01-14, inclusive.
-- Daily files: 15; model version: `v2025.03.14`; compressed volume: 29.5 MiB.
-- Audited source rows: 4,643,360; approved VulZoo matches: 4,152,416.
-- Valid rows outside the pinned VulZoo CVE catalogue: 490,944; excluded, not malformed.
-- Approved fingerprint:
+- Active contiguous score dates: 2025-03-21 through 2025-04-04, inclusive.
+- Active daily files: 15; model version: `v2025.03.14`; compressed volume: 26.17 MiB.
+- Active audited source rows: 4,083,075; approved VulZoo matches: 4,075,133.
+- Active valid rows outside the pinned VulZoo CVE catalogue: 7,942; excluded, not malformed.
+- Active approved fingerprint:
+  `221e5281bf5929a0daa2cbf2b16a9792636ccc3770416d49c362d90484a20cb3`.
+- Retained archival score dates: 2025-12-31 through 2026-01-14, inclusive; 4,152,416
+  observations and all 15 dated source snapshots remain unchanged.
+- Retained archival fingerprint:
   `1cec6b4591f0df289531778bc3e14fffa50dee396a0ff05aacfaa3472436b2b9`.
 - Historical reconstruction remains incomplete for NVD/KEV because only one retained snapshot
-  exists for those sources; the EPSS panel does not establish January 2026 local availability.
+  exists for those sources; neither EPSS panel establishes historical local availability.
 
 See [EPSS_INGESTION_CONTRACT.md](EPSS_INGESTION_CONTRACT.md) for daily source snapshots,
 probability bounds, temporal cut-offs and exclusion accounting.

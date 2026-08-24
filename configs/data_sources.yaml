@@ -32,11 +32,11 @@ sources:
     snapshot_date_note: "One dated source snapshot is recorded for each daily panel file."
     model_version: "v2025.03.14"
     upstream_commit: "3b3ae5b793011090800848c75ceea4cecaa9d309"
-    checksum: "sha256:1cec6b4591f0df289531778bc3e14fffa50dee396a0ff05aacfaa3472436b2b9"
+    checksum: "sha256:221e5281bf5929a0daa2cbf2b16a9792636ccc3770416d49c362d90484a20cb3"
     local_relative_path: snapshots/epss
-    panel_relative_path: panels/2025-12-31_to_2026-01-14
-    panel_start_date: "2025-12-31"
-    panel_end_date: "2026-01-14"
+    panel_relative_path: panels/2025-03-21_to_2025-04-04
+    panel_start_date: "2025-03-21"
+    panel_end_date: "2025-04-04"
     licence_note: Record FIRST terms and model-version boundary in each run.
     enabled: true
   cisa_kev:
