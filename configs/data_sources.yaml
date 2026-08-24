@@ -9,6 +9,20 @@ sources:
     local_relative_path: VulZoo
     licence_note: Verify upstream licences and per-source terms before redistribution.
     enabled: true
+  diversevul:
+    url: https://github.com/wagner-group/diversevul
+    purpose: Function-level C/C++ research labels joined to canonical VulZoo CVEs
+    retrieval_date: "2026-08-23"
+    snapshot_date: null
+    snapshot_date_note: Filename date is not verified source-availability evidence.
+    upstream_commit: "50a2c18b810252a79c892d8b5d96cd61a656b2da"
+    checksum: "sha256:7937c26003c4c24a396747432487e8abdd1c4622b5547ae93855bee15266bd57"
+    metadata_checksum: "sha256:974397b28f3f530e85faca31b27455a8bae0e1a114a6053368a4708d1c9c3454"
+    local_relative_path: DiverseVul
+    dataset_relative_path: downloads/dataset/diversevul_20230702.json
+    metadata_relative_path: downloads/metadata/diversevul_20230702_metadata.json
+    licence_note: No upstream licence declared; local academic inspection only, no redistribution.
+    enabled: true
   epss:
     url: https://www.first.org/epss/data
     purpose: Date-pinned exploitation probability and percentile
@@ -37,4 +51,3 @@ sources:
     local_relative_path: null
     licence_note: No licensed Qualys data or API access is supplied.
     enabled: false
-

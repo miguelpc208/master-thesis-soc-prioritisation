@@ -10,6 +10,7 @@ import sys
 
 from thesis_pipeline.config import ConfigurationError, load_experiment, load_scenario
 from thesis_pipeline.ingestion.coverage import scan_vulzoo_coverage
+from thesis_pipeline.ingestion.diversevul import ingest_diversevul
 from thesis_pipeline.ingestion.inventory import inventory_vulzoo
 from thesis_pipeline.ingestion.normalise import ingest_vulzoo
 from thesis_pipeline.ingestion.profiling import profile_vulzoo
@@ -98,6 +99,16 @@ def build_parser() -> argparse.ArgumentParser:
     ingest.add_argument("--coverage-report", required=True)
     ingest.add_argument("--progress-every", type=int, default=10000)
 
+    diversevul = subparsers.add_parser(
+        "ingest-diversevul",
+        help="Integrate approved DiverseVul function metadata with existing VulZoo CVEs",
+    )
+    diversevul.add_argument("--config", required=True)
+    diversevul.add_argument("--database", required=True)
+    diversevul.add_argument("--acquisition-manifest", required=True)
+    diversevul.add_argument("--profile-report", required=True)
+    diversevul.add_argument("--progress-every", type=int, default=25000)
+
     database = subparsers.add_parser(
         "init-db", help="Initialise the versioned SQLite schema outside the repository"
     )
@@ -160,6 +171,16 @@ def main(argv: list[str] | None = None) -> int:
                 args.config,
                 args.database,
                 args.coverage_report,
+                progress_every=args.progress_every,
+            )
+            print(json.dumps(ingestion, indent=2, sort_keys=True))
+            return 0
+        if args.command == "ingest-diversevul":
+            ingestion = ingest_diversevul(
+                args.config,
+                args.database,
+                args.acquisition_manifest,
+                args.profile_report,
                 progress_every=args.progress_every,
             )
             print(json.dumps(ingestion, indent=2, sort_keys=True))

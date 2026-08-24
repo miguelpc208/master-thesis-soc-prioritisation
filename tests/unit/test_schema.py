@@ -47,7 +47,10 @@ class SchemaTests(unittest.TestCase):
             self.assertIn("ingestion_rejection", tables)
             self.assertIn("cve_cwe", tables)
             self.assertIn("cve_cpe", tables)
-            self.assertEqual(versions, [1, 2, 3])
+            self.assertIn("diversevul_commit", tables)
+            self.assertIn("diversevul_function", tables)
+            self.assertIn("diversevul_function_cve", tables)
+            self.assertEqual(versions, [1, 2, 3, 4])
             self.assertTrue(
                 {"vulnerability_status", "source_snapshot_id", "ingestion_run_id"}
                 <= cve_columns
@@ -186,7 +189,7 @@ class SchemaTests(unittest.TestCase):
                     )
                 ]
 
-            self.assertEqual(versions, [1, 2, 3])
+            self.assertEqual(versions, [1, 2, 3, 4])
 
     def test_version_two_upgrade_preserves_existing_cpe_relationships(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

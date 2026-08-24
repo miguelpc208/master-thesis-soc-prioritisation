@@ -55,3 +55,26 @@ schema.
 | `vulnerable` | boolean | NVD CPE match flag; does not by itself prove asset exposure |
 
 See `VULNERABILITY_INGESTION_CONTRACT.md` for precedence, temporal and rejection rules.
+
+## DiverseVul function-research fields
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `diversevul_commit_id` | string PK | Deterministic approved-snapshot/project/commit identity |
+| `commit_sha` | string | Validated Git commit identifier; origin is recorded separately |
+| `commit_identity_source` | enum | `metadata_commit_id` or unambiguous `metadata_commit_url` recovery |
+| `declared_cve_ids_json` | JSON array | CVEs found only in the metadata row's explicit `CVE` field |
+| `declared_cwe_ids_json` | JSON array | Valid CWE identifiers found in the metadata `CWE` field |
+| `source_line_number` | integer | One-based source JSONL line; no raw function text is copied |
+| `source_function_hash` | string | Dataset-reported integer function hash preserved without overflow |
+| `function_sha256` | nullable SHA-256 | Hash of UTF-8 function source; null for the empty function |
+| `function_size_bytes` | integer | UTF-8 byte length; zero identifies the retained empty function |
+| `source_reported_size` | nullable integer | Upstream size annotation without inferred replacement |
+| `vulnerability_label` | boolean | Upstream research target label; not proof of exploitation or exposure |
+| `cwe_ids_json` | JSON array | Valid CWE identifiers supplied by the function-level source row |
+| `commit_message_sha256` | SHA-256 | Message digest; raw commit messages are not persisted |
+| `evidence_source` | enum | `metadata_cve_field` or separately traceable `commit_message` |
+
+Each `diversevul_function_cve.cve_id` must already exist in the canonical VulZoo `cve` table.
+Unknown CVEs are bounded rejections, never fabricated canonical records. See
+`DIVERSEVUL_INGESTION_CONTRACT.md` for label limitations and exact matching rules.

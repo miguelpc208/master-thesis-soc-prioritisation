@@ -4,10 +4,11 @@ SQLite migration `001_initial.sql` establishes the base schema. Migration
 `002_vulnerability_ingestion.sql` adds the source-snapshot, ingestion-run and rejection contracts,
 normalised CVE-to-CWE/CPE relations, and the additional NVD/KEV fields required by Phase 3.
 `003_ingestion_observation_identity.sql` extends CVSS natural keys with provider/type and CPE
-relationship natural keys with criteria/version bounds, preserving distinct observations. Applied
-migrations are immutable and recorded in
-`schema_version`; database initialisation safely skips versions already present. Every table has a
-primary key. Source-derived tables retain provenance
+relationship natural keys with criteria/version bounds, preserving distinct observations.
+`004_diversevul_integration.sql` adds pinned research-commit metadata, function-label metadata and
+evidence-qualified associations to existing canonical CVEs without copying source-code bodies.
+Applied migrations are immutable and recorded in `schema_version`; database initialisation safely
+skips versions already present. Every table has a primary key. Source-derived tables retain provenance
 and retrieval/effective timestamps; synthetic and workflow tables retain a scenario/run identity
 and creation timestamps. Null means unavailable or not applicable and must never be silently
 converted to zero/false.
@@ -16,6 +17,7 @@ converted to zero/false.
 | --- | --- |
 | Ingestion provenance | `source_snapshot`, `ingestion_run`, `ingestion_rejection` |
 | Vulnerability intelligence | `cve`, `cvss_observation`, `epss_observation`, `kev_observation`, `cwe`, `cpe`, `cve_cwe`, `cve_cpe`, `exploit_reference`, `patch_reference`, `attack_mapping` |
+| Function-level research labels | `diversevul_commit`, `diversevul_function`, `diversevul_function_cve` |
 | Organisation | `department`, `business_service`, `application`, `asset`, `asset_service_map`, `data_classification`, `regulatory_scope`, `owner_team` |
 | Findings/workflow | `vulnerability_finding`, `alert`, `case_ticket`, `triage_action`, `remediation_action`, `risk_acceptance`, `maintenance_window` |
 | Capacity/simulation | `team`, `analyst`, `capacity_calendar`, `scenario`, `simulation_run`, `simulation_event`, `queue_snapshot` |
@@ -32,3 +34,10 @@ with `observed_at <= decision_at`.
 `ingestion_run` records a deterministic input fingerprint and accepted/rejected counts. Rejections
 retain only relative paths, identifiers, reason codes and hashes; raw rejected records are not
 copied into the database.
+
+`diversevul_commit` stores exact project/commit identities and field-authoritative CVEs.
+`diversevul_function` stores one research-labelled source locator, bounded annotations and function
+hash per approved JSONL record; raw source text never enters SQLite. `diversevul_function_cve`
+references existing `cve.cve_id` values only and distinguishes explicit metadata-field evidence
+from explicit commit-message evidence. Labels and associations do not establish exploitability,
+asset applicability, business impact or decision-time availability.

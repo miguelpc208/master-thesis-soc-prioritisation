@@ -36,6 +36,7 @@ python -m thesis_pipeline.cli profile-vulzoo --config configs/data_sources.yaml 
 python -m thesis_pipeline.cli scan-vulzoo-coverage --config configs/data_sources.yaml --max-json-mib 5
 python -m thesis_pipeline.cli init-db --path "$env:THESIS_DATA_ROOT\databases\vulzoo-ingestion.sqlite"
 python -m thesis_pipeline.cli ingest-vulzoo --config configs/data_sources.yaml --database "$env:THESIS_DATA_ROOT\databases\vulzoo-ingestion.sqlite" --coverage-report outputs/vulzoo-coverage-v2.json
+python -m thesis_pipeline.cli ingest-diversevul --config configs/data_sources.yaml --database "$env:THESIS_DATA_ROOT\databases\vulzoo-ingestion.sqlite" --acquisition-manifest "$env:THESIS_DATA_ROOT\DiverseVul\manifests\APPROVED-MANIFEST.json" --profile-report outputs/APPROVED-DIVERSEVUL-PROFILE.json
 ```
 
 `inventory-vulzoo` never downloads data. It inventories an already approved local clone beneath
@@ -44,6 +45,11 @@ python -m thesis_pipeline.cli ingest-vulzoo --config configs/data_sources.yaml -
 `ingest-vulzoo` requires the previously approved complete coverage report and re-verifies its
 content fingerprint while reading local data. It writes only to an initialized SQLite database
 beneath `THESIS_DATA_ROOT`; EPSS and exploit payloads remain excluded.
+
+`ingest-diversevul` re-verifies the approved acquisition manifest, dataset and metadata checksums,
+read-only profile, and existing VulZoo catalogue before joining function-level research labels to
+canonical CVEs. Raw function source remains exclusively in the approved local JSONL dataset; it is
+never copied into SQLite, Git, logs, or generated reports.
 
 ## Experiment ladder
 
@@ -68,9 +74,10 @@ beneath `THESIS_DATA_ROOT`; EPSS and exploit payloads remain excluded.
 
 ## Data boundary
 
-VulZoo, EPSS/KEV downloads, SQLite databases, Parquet data, generated runs, model responses, and
-honeypot payloads stay outside Git. Approve an absolute non-OneDrive `THESIS_DATA_ROOT` with at least
-30 GB free before Phase 3. Store the path only in `.env`; `.env` is ignored.
+VulZoo, DiverseVul source functions, EPSS/KEV downloads, SQLite databases, Parquet data, generated
+runs, model responses, and honeypot payloads stay outside Git. Approve an absolute non-OneDrive
+`THESIS_DATA_ROOT` with at least 30 GB free before Phase 3. Store the path only in `.env`; `.env`
+is ignored.
 
 ## Reproducibility contract
 
@@ -83,12 +90,17 @@ UTC.
 
 Synthetic time metrics estimate relative scenario effects and are not measured enterprise MTTM or
 MTTR. Current smoke enrichment is synthetic and cannot support causal, predictive, or business
-claims. E3/E4 assumptions require calibration and sensitivity analysis. E5/E6 remain optional.
+claims. DiverseVul labels describe a dated function-level research corpus and do not establish
+exploitation, asset exposure, business impact, or current vulnerability intelligence. The acquired
+snapshot's observed counts differ from the paper's headline counts and must be reported as
+observed. E3/E4 assumptions require calibration and sensitivity analysis. E5/E6 remain optional.
 
 ## Source anchors
 
 - VulZoo repository: https://github.com/NUS-Curiosity/VulZoo
 - VulZoo paper: https://doi.org/10.1145/3691620.3695345
+- DiverseVul repository: https://github.com/wagner-group/diversevul
+- DiverseVul paper: https://doi.org/10.1145/3607199.3607242
 - FIRST EPSS: https://www.first.org/epss/data
 - CISA KEV: https://www.cisa.gov/known-exploited-vulnerabilities-catalog
 
