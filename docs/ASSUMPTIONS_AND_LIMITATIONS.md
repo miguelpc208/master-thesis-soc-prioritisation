@@ -14,8 +14,10 @@
 - No real organisation, Qualys feed, or enterprise SOC measurement is included.
 - Synthetic CVSS/EPSS/KEV/actionability are engineering fixtures.
 - The Phase 2 scheduler is a simplified deterministic batch queue.
-- VulZoo and DiverseVul ingestion is complete for the approved snapshots, but exact historical
-  NVD/KEV version panels and the FIRST EPSS daily panel are not yet complete.
+- VulZoo, DiverseVul and the 15-day FIRST EPSS panel are complete for their approved snapshots and
+  scenario window; exact historical NVD/KEV version panels remain unavailable.
+- Historical January 2026 EPSS files were acquired locally in August 2026 and therefore support
+  source-effective reconstruction, not strict January local availability or ground-truth claims.
 - The as-of view prevents look-ahead under its declared mode; source-effective reconstruction from
   one retained snapshot is not exact historical ground truth.
 - The real technical SQLite observations are not yet wired into the synthetic experiment runner.

@@ -37,6 +37,7 @@ python -m thesis_pipeline.cli scan-vulzoo-coverage --config configs/data_sources
 python -m thesis_pipeline.cli init-db --path "$env:THESIS_DATA_ROOT\databases\vulzoo-ingestion.sqlite"
 python -m thesis_pipeline.cli ingest-vulzoo --config configs/data_sources.yaml --database "$env:THESIS_DATA_ROOT\databases\vulzoo-ingestion.sqlite" --coverage-report outputs/vulzoo-coverage-v2.json
 python -m thesis_pipeline.cli ingest-diversevul --config configs/data_sources.yaml --database "$env:THESIS_DATA_ROOT\databases\vulzoo-ingestion.sqlite" --acquisition-manifest "$env:THESIS_DATA_ROOT\DiverseVul\manifests\APPROVED-MANIFEST.json" --profile-report outputs/APPROVED-DIVERSEVUL-PROFILE.json
+python -m thesis_pipeline.cli ingest-epss-panel --config configs/data_sources.yaml --database "$env:THESIS_DATA_ROOT\databases\vulzoo-ingestion.sqlite" --acquisition-manifest "$env:THESIS_DATA_ROOT\snapshots\epss\manifests\APPROVED-MANIFEST.json"
 python -m thesis_pipeline.cli audit-technical-as-of --database "$env:THESIS_DATA_ROOT\databases\vulzoo-ingestion.sqlite" --decision-at "2026-08-24T23:59:59Z" --mode strict_snapshot
 ```
 
@@ -51,6 +52,11 @@ beneath `THESIS_DATA_ROOT`; EPSS and exploit payloads remain excluded.
 read-only profile, and existing VulZoo catalogue before joining function-level research labels to
 canonical CVEs. Raw function source remains exclusively in the approved local JSONL dataset; it is
 never copied into SQLite, Git, logs, or generated reports.
+
+`ingest-epss-panel` re-verifies a dated, archive-commit-pinned FIRST EPSS acquisition manifest and
+all compressed daily checksums before joining probability/percentile observations to existing
+VulZoo CVEs. Each day retains separate source and execution provenance; valid CVEs outside the
+pinned VulZoo snapshot are counted and excluded without creating synthetic canonical records.
 
 `audit-technical-as-of` opens SQLite read-only and reports which normalized observations are
 eligible at an explicit UTC decision cut-off. `strict_snapshot` uses retained-snapshot availability;
@@ -99,7 +105,9 @@ MTTR. Current smoke enrichment is synthetic and cannot support causal, predictiv
 claims. DiverseVul labels describe a dated function-level research corpus and do not establish
 exploitation, asset exposure, business impact, or current vulnerability intelligence. The acquired
 snapshot's observed counts differ from the paper's headline counts and must be reported as
-observed. E3/E4 assumptions require calibration and sensitivity analysis. E5/E6 remain optional.
+observed. The EPSS panel is complete only for its approved 15-day scenario window; retained NVD and
+KEV sources remain single snapshots, so historical reconstruction is not exact ground truth.
+E3/E4 assumptions require calibration and sensitivity analysis. E5/E6 remain optional.
 
 ## Source anchors
 

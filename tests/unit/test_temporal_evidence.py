@@ -35,7 +35,7 @@ class TemporalEvidenceTests(unittest.TestCase):
                         snapshot_id,
                         source_name,
                         "test",
-                        "2025-03-19",
+                        "2024-08-01" if source_name == "first_epss" else "2025-03-19",
                         retrieved_at,
                         checksum,
                         "{}",

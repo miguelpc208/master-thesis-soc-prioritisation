@@ -64,9 +64,15 @@ schema.
 | `reconstruction_available_at_utc` | UTC datetime | Conservative source-time cut-off for explicitly incomplete reconstruction |
 | `operational_role` | enum | `catalogue`, `prioritisation`, `applicability`, or offline-only `offline_label` |
 | `history_status` | enum | `single_snapshot`, `unknown_snapshot`, or required `daily_panel` |
+| `score` | float 0–1 | FIRST EPSS exploitation probability for the 30 days after publication |
+| `percentile` | float 0–1 | Relative ranking within the scored population for that source date |
+| `score_date` | ISO date | Source-effective EPSS date; conservatively available at 23:59:59 UTC |
+| `model_version` | string | Exact EPSS model generation; approved panel uses `v2025.03.14` |
+| `outside_vulzoo_snapshot` | nonnegative integer | Valid EPSS rows excluded because their CVE is absent from the pinned catalogue |
 
 See `VULNERABILITY_INGESTION_CONTRACT.md` for precedence and rejection rules and
-`TEMPORAL_EVIDENCE_CONTRACT.md` for the as-of modes and claim boundary.
+`TEMPORAL_EVIDENCE_CONTRACT.md` for the as-of modes and claim boundary, and
+`EPSS_INGESTION_CONTRACT.md` for historical daily-panel provenance and exclusions.
 
 ## DiverseVul function-research fields
 

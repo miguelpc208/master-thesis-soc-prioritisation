@@ -11,6 +11,8 @@ evidence-qualified associations to existing canonical CVEs without copying sourc
 relationships, `AND`/`OR` operators, negation and the exact node containing each CPE match.
 `006_temporal_evidence_contract.sql` adds EPSS snapshot/run provenance, a versioned evidence-time
 policy and a normalized availability view for strict-snapshot and source-effective as-of queries.
+`007_epss_daily_panel.sql` enforces valid EPSS probabilities and percentiles, dated source-snapshot
+coherence, ingestion-run ownership and indexed score-date lookups.
 Applied migrations are immutable and recorded in `schema_version`; database initialisation safely
 skips versions already present. Every table has a primary key. Source-derived tables retain provenance
 and retrieval/effective timestamps; synthetic and workflow tables retain a scenario/run identity
@@ -56,3 +58,8 @@ KEV membership, CPE configuration occurrence, DiverseVul label and future EPSS s
 source-observed, local-retrieval, strict-availability and reconstruction-availability timestamps.
 Queries must filter the selected availability field at or before `priority_decision.decision_at_utc`.
 Single-snapshot reconstruction remains version-incomplete even when the date filter passes.
+
+`epss_observation` retains one date-pinned probability and percentile per canonical CVE and
+approved model/source snapshot. Each compressed FIRST daily file has its own `source_snapshot` and
+transactional `ingestion_run`. Valid upstream CVEs absent from the pinned VulZoo catalogue remain
+outside scope rather than becoming synthetic canonical vulnerabilities or data-quality rejections.

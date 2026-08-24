@@ -28,20 +28,15 @@ class SchemaTests(unittest.TestCase):
                         "SELECT version FROM schema_version ORDER BY version"
                     )
                 ]
-                cve_columns = {
-                    row[1] for row in connection.execute("PRAGMA table_info(cve)")
-                }
+                cve_columns = {row[1] for row in connection.execute("PRAGMA table_info(cve)")}
                 cvss_columns = {
-                    row[1]
-                    for row in connection.execute("PRAGMA table_info(cvss_observation)")
+                    row[1] for row in connection.execute("PRAGMA table_info(cvss_observation)")
                 }
                 kev_columns = {
-                    row[1]
-                    for row in connection.execute("PRAGMA table_info(kev_observation)")
+                    row[1] for row in connection.execute("PRAGMA table_info(kev_observation)")
                 }
                 epss_columns = {
-                    row[1]
-                    for row in connection.execute("PRAGMA table_info(epss_observation)")
+                    row[1] for row in connection.execute("PRAGMA table_info(epss_observation)")
                 }
 
             self.assertIn("priority_decision", tables)
@@ -57,10 +52,9 @@ class SchemaTests(unittest.TestCase):
             self.assertIn("diversevul_function", tables)
             self.assertIn("diversevul_function_cve", tables)
             self.assertIn("evidence_time_policy", tables)
-            self.assertEqual(versions, [1, 2, 3, 4, 5, 6])
+            self.assertEqual(versions, [1, 2, 3, 4, 5, 6, 7])
             self.assertTrue(
-                {"vulnerability_status", "source_snapshot_id", "ingestion_run_id"}
-                <= cve_columns
+                {"vulnerability_status", "source_snapshot_id", "ingestion_run_id"} <= cve_columns
             )
             self.assertTrue(
                 {
@@ -87,10 +81,7 @@ class SchemaTests(unittest.TestCase):
                 }
                 <= kev_columns
             )
-            self.assertTrue(
-                {"source_snapshot_id", "ingestion_run_id"}
-                <= epss_columns
-            )
+            self.assertTrue({"source_snapshot_id", "ingestion_run_id"} <= epss_columns)
 
     def test_vulnerability_ingestion_constraints_are_enforced(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -174,8 +165,7 @@ class SchemaTests(unittest.TestCase):
                     )
 
                 rejection_columns = {
-                    row[1]
-                    for row in connection.execute("PRAGMA table_info(ingestion_rejection)")
+                    row[1] for row in connection.execute("PRAGMA table_info(ingestion_rejection)")
                 }
 
             self.assertNotIn("payload_json", rejection_columns)
@@ -331,6 +321,90 @@ class SchemaTests(unittest.TestCase):
                         ),
                     )
 
+    def test_epss_observation_constraints_require_bounded_daily_provenance(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            path = initialise_database(Path(directory) / "thesis.sqlite")
+            retrieved = "2026-08-24T12:00:00Z"
+
+            with closing(sqlite3.connect(path)) as connection:
+                connection.execute("PRAGMA foreign_keys = ON")
+                connection.execute(
+                    "INSERT INTO cve(cve_id, source_name, retrieved_at_utc, created_at_utc) "
+                    "VALUES (?, ?, ?, ?)",
+                    ("CVE-2024-0001", "nvd", retrieved, retrieved),
+                )
+                connection.execute(
+                    """
+                    INSERT INTO source_snapshot(
+                        source_snapshot_id, source_name, source_version, snapshot_date,
+                        retrieved_at_utc, checksum, metadata_json, created_at_utc
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        "snapshot:epss",
+                        "first_epss",
+                        "v2025.03.14",
+                        "2025-12-31",
+                        retrieved,
+                        "sha256:test",
+                        "{}",
+                        retrieved,
+                    ),
+                )
+                connection.execute(
+                    """
+                    INSERT INTO ingestion_run(
+                        ingestion_run_id, source_snapshot_id, started_at_utc, status,
+                        input_fingerprint_sha256, configuration_json, created_at_utc
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        "run:epss",
+                        "snapshot:epss",
+                        retrieved,
+                        "running",
+                        "a" * 64,
+                        "{}",
+                        retrieved,
+                    ),
+                )
+
+                def insert(identifier: str, score: float, score_date: str) -> None:
+                    connection.execute(
+                        """
+                        INSERT INTO epss_observation(
+                            epss_observation_id, cve_id, score, percentile,
+                            score_date, model_version, source_name, retrieved_at_utc,
+                            created_at_utc, source_snapshot_id, ingestion_run_id
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        """,
+                        (
+                            identifier,
+                            "CVE-2024-0001",
+                            score,
+                            0.9,
+                            score_date,
+                            "v2025.03.14",
+                            "first_epss",
+                            retrieved,
+                            retrieved,
+                            "snapshot:epss",
+                            "run:epss",
+                        ),
+                    )
+
+                with self.assertRaisesRegex(sqlite3.IntegrityError, "probability"):
+                    insert("epss:invalid-score", 1.5, "2025-12-31")
+
+                with self.assertRaisesRegex(sqlite3.IntegrityError, "snapshot"):
+                    insert("epss:invalid-date", 0.5, "2026-01-01")
+
+                insert("epss:valid", 0.5, "2025-12-31")
+                self.assertEqual(
+                    connection.execute("SELECT COUNT(*) FROM epss_observation").fetchone(),
+                    (1,),
+                )
+
     def test_existing_version_one_database_upgrades_to_latest_version(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "thesis.sqlite"
@@ -350,7 +424,7 @@ class SchemaTests(unittest.TestCase):
                     )
                 ]
 
-            self.assertEqual(versions, [1, 2, 3, 4, 5, 6])
+            self.assertEqual(versions, [1, 2, 3, 4, 5, 6, 7])
 
     def test_version_two_upgrade_preserves_existing_cpe_relationships(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -360,9 +434,7 @@ class SchemaTests(unittest.TestCase):
             with closing(sqlite3.connect(path)) as connection:
                 connection.execute("PRAGMA foreign_keys = ON")
                 for name in ("001_initial.sql", "002_vulnerability_ingestion.sql"):
-                    connection.executescript(
-                        (SCHEMA_ROOT / name).read_text(encoding="utf-8-sig")
-                    )
+                    connection.executescript((SCHEMA_ROOT / name).read_text(encoding="utf-8-sig"))
                 connection.execute(
                     """
                     INSERT INTO source_snapshot(
@@ -435,9 +507,7 @@ class SchemaTests(unittest.TestCase):
             with closing(sqlite3.connect(path)) as connection:
                 connection.execute("PRAGMA foreign_keys = ON")
                 self.assertEqual(
-                    connection.execute(
-                        "SELECT version_end_excluding FROM cve_cpe"
-                    ).fetchall(),
+                    connection.execute("SELECT version_end_excluding FROM cve_cpe").fetchall(),
                     [("2.0",)],
                 )
                 connection.execute(
@@ -466,8 +536,7 @@ class SchemaTests(unittest.TestCase):
                 )
                 self.assertEqual(
                     connection.execute(
-                        "SELECT version_end_excluding FROM cve_cpe "
-                        "ORDER BY version_end_excluding"
+                        "SELECT version_end_excluding FROM cve_cpe ORDER BY version_end_excluding"
                     ).fetchall(),
                     [("2.0",), ("3.0",)],
                 )

@@ -11,6 +11,7 @@ import sys
 from thesis_pipeline.config import ConfigurationError, load_experiment, load_scenario
 from thesis_pipeline.ingestion.coverage import scan_vulzoo_coverage
 from thesis_pipeline.ingestion.diversevul import ingest_diversevul
+from thesis_pipeline.ingestion.epss import ingest_epss_panel
 from thesis_pipeline.ingestion.inventory import inventory_vulzoo
 from thesis_pipeline.ingestion.normalise import ingest_vulzoo
 from thesis_pipeline.ingestion.profiling import profile_vulzoo
@@ -110,6 +111,15 @@ def build_parser() -> argparse.ArgumentParser:
     diversevul.add_argument("--profile-report", required=True)
     diversevul.add_argument("--progress-every", type=int, default=25000)
 
+    epss = subparsers.add_parser(
+        "ingest-epss-panel",
+        help="Integrate approved historical FIRST EPSS scores with existing VulZoo CVEs",
+    )
+    epss.add_argument("--config", required=True)
+    epss.add_argument("--database", required=True)
+    epss.add_argument("--acquisition-manifest", required=True)
+    epss.add_argument("--progress-every", type=int, default=100000)
+
     temporal = subparsers.add_parser(
         "audit-technical-as-of",
         help="Audit technical evidence available at a UTC decision cutoff without mutation",
@@ -190,6 +200,15 @@ def main(argv: list[str] | None = None) -> int:
                 args.database,
                 args.acquisition_manifest,
                 args.profile_report,
+                progress_every=args.progress_every,
+            )
+            print(json.dumps(ingestion, indent=2, sort_keys=True))
+            return 0
+        if args.command == "ingest-epss-panel":
+            ingestion = ingest_epss_panel(
+                args.config,
+                args.database,
+                args.acquisition_manifest,
                 progress_every=args.progress_every,
             )
             print(json.dumps(ingestion, indent=2, sort_keys=True))

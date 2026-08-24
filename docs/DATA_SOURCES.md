@@ -8,7 +8,7 @@ snapshot.
 | --- | --- | --- | --- |
 | VulZoo | Multi-dimensional public vulnerability data | acquired — approved processed subset | Shallow, processed-first inventory only after approval; capture commit SHA |
 | DiverseVul | Function-level C/C++ vulnerability research labels | acquired — pinned dataset and metadata | Hash both JSONL files; preserve local source boundary and evidence provenance |
-| FIRST EPSS | Date-pinned exploitation probability | Disabled/not downloaded | Bulk daily CSV; record date and model version |
+| FIRST EPSS | Date-pinned exploitation probability | Acquired — 15-day pinned historical panel | Bulk daily CSV; record date, model version, checksum and retrieval |
 | CISA KEV | Known-exploitation evidence | Acquired inside approved VulZoo snapshot | Preserve `dateAdded`, catalogue date and retrieval time; enforce declared as-of mode |
 | Qualys-like proxy | Transparent comparison only | Disabled | Never call it Qualys data or proprietary score reproduction |
 
@@ -67,3 +67,20 @@ availability, source-effective reconstruction, conservative date-only handling a
 
 See [DIVERSEVUL_INGESTION_CONTRACT.md](DIVERSEVUL_INGESTION_CONTRACT.md) for the
 approved function-to-CVE evidence, provenance, rejection and non-redistribution rules.
+
+## FIRST EPSS approved historical panel
+
+- Acquisition date: 2026-08-24; exact UTC retrieval time is recorded in the local manifest.
+- Official historical archive: `https://github.com/empiricalsec/epss_scores`.
+- Pinned archive commit: `3b3ae5b793011090800848c75ceea4cecaa9d309`.
+- Approved contiguous score dates: 2025-12-31 through 2026-01-14, inclusive.
+- Daily files: 15; model version: `v2025.03.14`; compressed volume: 29.5 MiB.
+- Audited source rows: 4,643,360; approved VulZoo matches: 4,152,416.
+- Valid rows outside the pinned VulZoo CVE catalogue: 490,944; excluded, not malformed.
+- Approved fingerprint:
+  `1cec6b4591f0df289531778bc3e14fffa50dee396a0ff05aacfaa3472436b2b9`.
+- Historical reconstruction remains incomplete for NVD/KEV because only one retained snapshot
+  exists for those sources; the EPSS panel does not establish January 2026 local availability.
+
+See [EPSS_INGESTION_CONTRACT.md](EPSS_INGESTION_CONTRACT.md) for daily source snapshots,
+probability bounds, temporal cut-offs and exclusion accounting.

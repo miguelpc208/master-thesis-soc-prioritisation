@@ -25,14 +25,20 @@ sources:
     enabled: true
   epss:
     url: https://www.first.org/epss/data
+    archive_url: https://github.com/empiricalsec/epss_scores
     purpose: Date-pinned exploitation probability and percentile
-    retrieval_date: null
+    retrieval_date: "2026-08-24"
     snapshot_date: null
-    model_version: null
-    checksum: null
+    snapshot_date_note: "One dated source snapshot is recorded for each daily panel file."
+    model_version: "v2025.03.14"
+    upstream_commit: "3b3ae5b793011090800848c75ceea4cecaa9d309"
+    checksum: "sha256:1cec6b4591f0df289531778bc3e14fffa50dee396a0ff05aacfaa3472436b2b9"
     local_relative_path: snapshots/epss
+    panel_relative_path: panels/2025-12-31_to_2026-01-14
+    panel_start_date: "2025-12-31"
+    panel_end_date: "2026-01-14"
     licence_note: Record FIRST terms and model-version boundary in each run.
-    enabled: false
+    enabled: true
   cisa_kev:
     url: https://www.cisa.gov/known-exploited-vulnerabilities-catalog
     purpose: Date-aware known-exploitation evidence

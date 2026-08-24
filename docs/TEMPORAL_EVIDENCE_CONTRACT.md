@@ -56,7 +56,7 @@ cannot see a fact earlier than the source precision supports.
 
 ## Operational boundary
 
-- CVSS, KEV and future EPSS observations may support prioritisation only after the selected as-of
+- CVSS, KEV and dated EPSS observations may support prioritisation only after the selected as-of
   rule admits them.
 - CPE configuration matches support applicability evaluation only after admission and after a
   separate CMDB matcher proves the asset/product/version conditions.
@@ -82,6 +82,7 @@ limitations and a deterministic SHA-256 fingerprint. Reports belong under ignore
 
 ## Claim boundary
 
-Neither mode establishes a complete historical panel. A defensible time-varying E2 study still
-requires date-pinned FIRST EPSS files and, if exact historical NVD/KEV state is required, additional
-approved source snapshots. All experiments must record the mode and cut-off they use.
+FIRST EPSS supplies a complete dated panel only for the approved 2025-12-31 through 2026-01-14
+scenario window. NVD and KEV remain single retained snapshots, so neither mode establishes exact
+historical ground truth across all evidence. All experiments must record their mode, cut-off and
+approved EPSS model version. See [EPSS_INGESTION_CONTRACT.md](EPSS_INGESTION_CONTRACT.md).
