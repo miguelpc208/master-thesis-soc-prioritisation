@@ -9,8 +9,14 @@ import subprocess
 import sys
 
 from thesis_pipeline.config import ConfigurationError, load_experiment, load_scenario
+from thesis_pipeline.ingestion.advisories import ingest_github_advisories
+from thesis_pipeline.ingestion.coverage import scan_vulzoo_coverage
+from thesis_pipeline.ingestion.diversevul import ingest_diversevul
+from thesis_pipeline.ingestion.epss import ingest_epss_panel
 from thesis_pipeline.ingestion.inventory import inventory_vulzoo
+from thesis_pipeline.ingestion.normalise import ingest_vulzoo
 from thesis_pipeline.ingestion.profiling import profile_vulzoo
+from thesis_pipeline.quality.evidence_as_of import AS_OF_MODES, audit_technical_evidence_as_of
 from thesis_pipeline.run import project_root, run_experiment
 from thesis_pipeline.storage.schema import initialise_database
 from thesis_pipeline.synthetic_org.generator import generate_dataset
@@ -79,6 +85,61 @@ def build_parser() -> argparse.ArgumentParser:
     profile.add_argument("--sample-limit", type=int, default=2)
     profile.add_argument("--max-json-mib", type=int, default=50)
 
+    coverage = subparsers.add_parser(
+        "scan-vulzoo-coverage",
+        help="Scan complete NVD/CVE/KEV metadata without exporting raw records",
+    )
+    coverage.add_argument("--config", required=True)
+    coverage.add_argument("--max-json-mib", type=int, default=5)
+    coverage.add_argument("--rejection-sample-limit", type=int, default=20)
+
+    ingest = subparsers.add_parser(
+        "ingest-vulzoo",
+        help="Normalise approved local NVD, legacy CVE, and KEV records into SQLite",
+    )
+    ingest.add_argument("--config", required=True)
+    ingest.add_argument("--database", required=True)
+    ingest.add_argument("--coverage-report", required=True)
+    ingest.add_argument("--progress-every", type=int, default=10000)
+
+    diversevul = subparsers.add_parser(
+        "ingest-diversevul",
+        help="Integrate approved DiverseVul function metadata with existing VulZoo CVEs",
+    )
+    diversevul.add_argument("--config", required=True)
+    diversevul.add_argument("--database", required=True)
+    diversevul.add_argument("--acquisition-manifest", required=True)
+    diversevul.add_argument("--profile-report", required=True)
+    diversevul.add_argument("--progress-every", type=int, default=25000)
+
+    epss = subparsers.add_parser(
+        "ingest-epss-panel",
+        help="Integrate approved historical FIRST EPSS scores with existing VulZoo CVEs",
+    )
+    epss.add_argument("--config", required=True)
+    epss.add_argument("--database", required=True)
+    epss.add_argument("--acquisition-manifest", required=True)
+    epss.add_argument("--progress-every", type=int, default=100000)
+
+    advisory = subparsers.add_parser(
+        "ingest-github-advisories",
+        help="Integrate verified GHSA remediation metadata and corroborated patch commits",
+    )
+    advisory.add_argument("--config", required=True)
+    advisory.add_argument("--database", required=True)
+    advisory.add_argument("--acquisition-manifest", required=True)
+    advisory.add_argument("--audit-report", required=True)
+    advisory.add_argument("--decision-at", required=True)
+    advisory.add_argument("--progress-every", type=int, default=1000)
+
+    temporal = subparsers.add_parser(
+        "audit-technical-as-of",
+        help="Audit technical evidence available at a UTC decision cutoff without mutation",
+    )
+    temporal.add_argument("--database", required=True)
+    temporal.add_argument("--decision-at", required=True)
+    temporal.add_argument("--mode", choices=AS_OF_MODES, default="strict_snapshot")
+
     database = subparsers.add_parser(
         "init-db", help="Initialise the versioned SQLite schema outside the repository"
     )
@@ -127,6 +188,61 @@ def main(argv: list[str] | None = None) -> int:
                 max_json_bytes=args.max_json_mib * 1024 * 1024,
             )
             print(json.dumps(profile, indent=2, sort_keys=True))
+            return 0
+        if args.command == "scan-vulzoo-coverage":
+            coverage = scan_vulzoo_coverage(
+                args.config,
+                max_json_bytes=args.max_json_mib * 1024 * 1024,
+                rejection_sample_limit=args.rejection_sample_limit,
+            )
+            print(json.dumps(coverage, indent=2, sort_keys=True))
+            return 0
+        if args.command == "ingest-vulzoo":
+            ingestion = ingest_vulzoo(
+                args.config,
+                args.database,
+                args.coverage_report,
+                progress_every=args.progress_every,
+            )
+            print(json.dumps(ingestion, indent=2, sort_keys=True))
+            return 0
+        if args.command == "ingest-diversevul":
+            ingestion = ingest_diversevul(
+                args.config,
+                args.database,
+                args.acquisition_manifest,
+                args.profile_report,
+                progress_every=args.progress_every,
+            )
+            print(json.dumps(ingestion, indent=2, sort_keys=True))
+            return 0
+        if args.command == "ingest-epss-panel":
+            ingestion = ingest_epss_panel(
+                args.config,
+                args.database,
+                args.acquisition_manifest,
+                progress_every=args.progress_every,
+            )
+            print(json.dumps(ingestion, indent=2, sort_keys=True))
+            return 0
+        if args.command == "ingest-github-advisories":
+            ingestion = ingest_github_advisories(
+                args.config,
+                args.database,
+                args.acquisition_manifest,
+                args.audit_report,
+                args.decision_at,
+                progress_every=args.progress_every,
+            )
+            print(json.dumps(ingestion, indent=2, sort_keys=True))
+            return 0
+        if args.command == "audit-technical-as-of":
+            audit = audit_technical_evidence_as_of(
+                args.database,
+                args.decision_at,
+                mode=args.mode,
+            )
+            print(json.dumps(audit, indent=2, sort_keys=True))
             return 0
         if args.command == "init-db":
             print(initialise_database(args.path))

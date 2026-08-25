@@ -1,4 +1,4 @@
-# Phase 2 data dictionary
+# Data dictionary
 
 Null means unavailable/not applicable, never zero or false. External observations require source,
 retrieval timestamp, effective/as-of date, and checksum or snapshot identity.
@@ -34,5 +34,92 @@ Records also retain priority rank, analyst/remediator ID, and SLA deadline.
 - Utilisation values are simulation proxies, not observed staff productivity.
 - Ranking labels are synthetic and support engineering checks only.
 
-See `schemas/logical_data_model.md` and `schemas/001_initial.sql` for the broader Phase 3 schema.
+See `schemas/logical_data_model.md` and the numbered files under `schemas/` for the broader Phase 3
+schema.
 
+## Phase 3 vulnerability-intelligence fields
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `source_snapshot_id` | string FK | Exact source/checksum identity shared by imported records |
+| `ingestion_run_id` | string FK | Deterministic ingestion execution that accepted the record |
+| `vulnerability_status` | nullable string | NVD `vulnStatus`; no inferred replacement when absent |
+| `observed_at_utc` | UTC datetime | Earliest conservative time at which the stored observation may be used |
+| `metric_source`, `metric_type` | nullable string | NVD CVSS provider and metric classification |
+| `base_score` | nullable float 0–10 | Stored CVSS value; missing is never converted to zero |
+| `base_severity` | nullable string | Source-reported CVSS severity label |
+| `exploitability_score` | nullable float | Source-reported CVSS exploitability component |
+| `impact_score` | nullable float | Source-reported CVSS impact component |
+| `date_added` | date | CISA KEV membership effective date |
+| `catalogue_date` | date | Dated KEV catalogue version containing the observation |
+| `vulnerable` | boolean | NVD CPE match flag; does not by itself prove asset exposure |
+| `source_path` | string | Exact ordered path of an NVD configuration node or CPE match |
+| `parent_node_id` | nullable string FK | Parent required to reconstruct the NVD applicability tree |
+| `logical_operator` | nullable enum | Source-provided `AND` or `OR`; null only when the source omits it |
+| `negate` | nullable boolean | Source-provided logical negation; null only when omitted |
+| `node_kind` | enum | Top-level `configuration` or nested logical `node` |
+| `effective_at_utc` | nullable UTC datetime | Time the source says a fact applies; null when source time is unverified |
+| `source_observed_at_utc` | nullable UTC datetime | Version/catalogue time of the retained source observation |
+| `strict_available_at_utc` | UTC datetime | Earliest audited time the approved local snapshot may expose the observation |
+| `reconstruction_available_at_utc` | UTC datetime | Conservative source-time cut-off for explicitly incomplete reconstruction |
+| `operational_role` | enum | `catalogue`, `prioritisation`, `applicability`, or offline-only `offline_label` |
+| `history_status` | enum | `single_snapshot`, `unknown_snapshot`, or required `daily_panel` |
+| `score` | float 0–1 | FIRST EPSS exploitation probability for the 30 days after publication |
+| `percentile` | float 0–1 | Relative ranking within the scored population for that source date |
+| `score_date` | ISO date | Source-effective EPSS date; conservatively available at 23:59:59 UTC |
+| `model_version` | string | Exact EPSS model generation; approved panel uses `v2025.03.14` |
+| `outside_vulzoo_snapshot` | nonnegative integer | Valid EPSS rows excluded because their CVE is absent from the pinned catalogue |
+
+See `VULNERABILITY_INGESTION_CONTRACT.md` for precedence and rejection rules and
+`TEMPORAL_EVIDENCE_CONTRACT.md` for the as-of modes and claim boundary, and
+`EPSS_INGESTION_CONTRACT.md` for historical daily-panel provenance and exclusions.
+
+## GitHub advisory and remediation fields
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `github_advisory_id` | string PK | Deterministic approved-snapshot GHSA identity |
+| `ghsa_id` | string | Authoritative advisory identifier validated against the source path |
+| `published_at_utc` | UTC datetime | Authoritative GHSA publication; never assigned to an unrelated commit |
+| `modified_at_utc` | UTC datetime | Authoritative retained GHSA version time, preserved even when earlier than publication |
+| `source_available_at_utc` | UTC datetime | Conservative `max(published_at_utc, modified_at_utc)` availability bound |
+| `withdrawn_at_utc` | nullable UTC datetime | Always null in accepted rows; all withdrawn source documents are rejected |
+| `source_relative_path` | string | Audited relative path beneath the approved advisory collection |
+| `record_sha256` | SHA-256 | Digest of the locally inspected advisory metadata document |
+| `package_purl` | nullable string | Source-reported package URL, never inferred when absent |
+| `source_position` | nonnegative integer | Original ordered advisory package/version position |
+| `range_position`, `event_position` | nonnegative integer | Original ordered package range and event positions |
+| `range_type` | bounded string | Source-reported version-range interpretation |
+| `event_kind` | enum | `introduced`, `fixed`, `last_affected` or `limit` |
+| `event_value` | bounded string | Exact source version/event value without inferred fix applicability |
+| `reference_kind` | enum | Exact same-CVE hash/URL `corroborated_commit` |
+| `evidence_time_status` | enum | `authoritative_advisory_available` or `undated_context_only` |
+| `anchor_github_advisory_id` | nullable string FK | Accepted same-CVE advisory containing the identical commit URL |
+
+Advisory CVE links require the source document's authoritative `aliases` field and an existing
+canonical CVE. Undated corroborated commits remain outside historical reconstruction. Raw advisory
+descriptions, patch bodies and exploit payloads are never stored. See
+`GITHUB_ADVISORY_REMEDIATION_CONTRACT.md` for the complete evidence and temporal rules.
+
+## DiverseVul function-research fields
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `diversevul_commit_id` | string PK | Deterministic approved-snapshot/project/commit identity |
+| `commit_sha` | string | Validated Git commit identifier; origin is recorded separately |
+| `commit_identity_source` | enum | `metadata_commit_id` or unambiguous `metadata_commit_url` recovery |
+| `declared_cve_ids_json` | JSON array | CVEs found only in the metadata row's explicit `CVE` field |
+| `declared_cwe_ids_json` | JSON array | Valid CWE identifiers found in the metadata `CWE` field |
+| `source_line_number` | integer | One-based source JSONL line; no raw function text is copied |
+| `source_function_hash` | string | Dataset-reported integer function hash preserved without overflow |
+| `function_sha256` | nullable SHA-256 | Hash of UTF-8 function source; null for the empty function |
+| `function_size_bytes` | integer | UTF-8 byte length; zero identifies the retained empty function |
+| `source_reported_size` | nullable integer | Upstream size annotation without inferred replacement |
+| `vulnerability_label` | boolean | Upstream research target label; not proof of exploitation or exposure |
+| `cwe_ids_json` | JSON array | Valid CWE identifiers supplied by the function-level source row |
+| `commit_message_sha256` | SHA-256 | Message digest; raw commit messages are not persisted |
+| `evidence_source` | enum | `metadata_cve_field` or separately traceable `commit_message` |
+
+Each `diversevul_function_cve.cve_id` must already exist in the canonical VulZoo `cve` table.
+Unknown CVEs are bounded rejections, never fabricated canonical records. See
+`DIVERSEVUL_INGESTION_CONTRACT.md` for label limitations and exact matching rules.

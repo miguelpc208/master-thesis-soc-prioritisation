@@ -2,7 +2,7 @@ scenario:
   id: smoke
   label: Small engineering validation only
   seed: 20260803
-  start_time_utc: "2026-01-01T09:00:00+00:00"
+  start_time_utc: "2025-03-22T09:00:00+00:00"
   horizon_hours: 72
   organisation:
     departments: 3
@@ -30,4 +30,3 @@ scenario:
     high: 48
     medium: 96
     low: 168
-
