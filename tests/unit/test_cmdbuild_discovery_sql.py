@@ -2,7 +2,6 @@ import json
 import re
 from pathlib import Path
 
-
 ROOT = Path(__file__).resolve().parents[2]
 DISCOVERY_ROOT = ROOT / "sql" / "cmdbuild" / "discovery"
 EXPECTED_QUERIES = (
@@ -46,8 +45,8 @@ def test_inheritance_query_checks_concrete_classes_and_gaps() -> None:
     assert "business_service_application" in query and "incident_physical_asset" in query
 
 
-def test_discovery_does_not_prematurely_mutate_field_mapping() -> None:
+def test_discovery_queries_support_confirmed_field_mapping() -> None:
     mapping = json.loads((ROOT / "config" / "cmdbuild_fields.json").read_text())
-    assert mapping["discovery_status"] == "pending"
-    assert all(item["cmdbuild_id"] is None for item in mapping["entities"].values())
-    assert all(item["cmdbuild_id"] is None for item in mapping["domains"].values())
+    assert mapping["discovery_status"] == "confirmed"
+    assert all(isinstance(item["cmdbuild_id"], str) for item in mapping["entities"].values())
+    assert all(isinstance(item["cmdbuild_id"], str) for item in mapping["domains"].values())

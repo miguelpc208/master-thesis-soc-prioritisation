@@ -1,7 +1,6 @@
 import json
 from pathlib import Path
 
-
 REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
 
 
@@ -10,23 +9,41 @@ def load_configuration(filename: str) -> dict:
     return json.loads(path.read_text(encoding="utf-8"))
 
 
-def test_cmdbuild_identifiers_remain_undiscovered() -> None:
+def test_cmdbuild_identifiers_are_discovered_and_portable() -> None:
     config = load_configuration("cmdbuild_fields.json")
 
-    assert config["discovery_status"] == "pending"
+    assert config["discovery_status"] == "confirmed"
     assert all(
-        entity["cmdbuild_id"] is None
+        isinstance(entity["cmdbuild_id"], str) and entity["cmdbuild_id"]
         for entity in config["entities"].values()
     )
     assert all(
-        value is None
-        for entity in config["entities"].values()
-        for value in entity["fields"].values()
-    )
-    assert all(
-        domain["cmdbuild_id"] is None
+        isinstance(domain["cmdbuild_id"], str) and domain["cmdbuild_id"]
         for domain in config["domains"].values()
     )
+    assert all(
+        isinstance(code, str)
+        for lookup in config["lookups"].values()
+        for code in lookup["codes"].values()
+    )
+
+
+def test_unmapped_fields_are_explicitly_external_or_relation_backed() -> None:
+    config = load_configuration("cmdbuild_fields.json")
+    unresolved = {
+        f"{entity_name}.{field_name}"
+        for entity_name, entity in config["entities"].items()
+        for field_name, field_value in entity["fields"].items()
+        if field_value is None
+    }
+    declared_external = {
+        f"{entity_name}.{field_name}"
+        for entity_name, fields in config["integration"]["external_fields"].items()
+        for field_name in fields
+    }
+    relation_backed = set(config["integration"]["relation_fields"])
+
+    assert unresolved == declared_external | relation_backed
 
 
 def test_business_entities_and_workflows_are_distinct() -> None:
@@ -37,6 +54,46 @@ def test_business_entities_and_workflows_are_distinct() -> None:
     assert entities["business_service"]["kind"] == "class"
     assert entities["incident"]["kind"] == "process"
     assert entities["change"]["kind"] == "process"
+    assert entities["incident"]["cmdbuild_id"] == "IncidentMgt"
+    assert entities["change"]["cmdbuild_id"] == "ChangeMgt"
+
+
+def test_native_relationships_preserve_actual_domain_directions() -> None:
+    config = load_configuration("cmdbuild_fields.json")
+    domains = config["domains"]
+
+    assert domains["vendor_contract"]["cmdbuild_id"] == "SupplierContract"
+    assert domains["contract_sla"]["cmdbuild_id"] == "SLAContract"
+    assert domains["contract_sla"]["direction"] == "inverse"
+    assert domains["application_server"]["cmdbuild_id"] == "HardwareSoftwareInstance"
+    assert domains["application_server"]["direction"] == "inverse"
+    assert domains["incident_asset"]["cmdbuild_id"] == "ITProcCI"
+
+
+def test_native_sla_codes_and_workflow_start_activities_are_stable() -> None:
+    config = load_configuration("cmdbuild_fields.json")
+    entities = config["entities"]
+    lookups = config["lookups"]
+
+    assert entities["sla"]["fields"]["target_minutes"] == "Threshold"
+    assert lookups["sla_object"]["codes"] == {
+        "triage": "charge",
+        "resolution": "resolution",
+    }
+    assert lookups["sla_threshold_type"]["codes"]["minutes"] == "MM"
+    assert entities["incident"]["start_activity"] == "IM02-HDOpening"
+    assert entities["change"]["start_activity"] == "CM01-Opening"
+
+
+def test_read_only_and_hidden_fields_are_not_treated_as_writable() -> None:
+    config = load_configuration("cmdbuild_fields.json")
+    entities = config["entities"]
+
+    assert entities["incident"]["fields"]["triage_started_at"] == "TakeChargeTimestamp"
+    assert "triage_started_at" in entities["incident"]["read_only_fields"]
+    assert entities["application"]["fields"]["name"] is None
+    assert "Description" in entities["application"]["hidden_system_fields"]
+    assert entities["application"]["fields"]["server"] == "Hardware"
 
 
 def test_occurrence_preserves_cve_and_asset_grain() -> None:

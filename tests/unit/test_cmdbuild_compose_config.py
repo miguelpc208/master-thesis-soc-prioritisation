@@ -1,7 +1,6 @@
 import json
 from pathlib import Path
 
-
 ROOT = Path(__file__).resolve().parents[2]
 COMPOSE_PATH = ROOT / "infra" / "cmdbuild" / "compose.yaml"
 LOCK_PATH = ROOT / "infra" / "cmdbuild" / "image-lock.json"

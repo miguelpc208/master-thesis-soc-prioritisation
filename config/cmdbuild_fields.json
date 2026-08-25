@@ -1,6 +1,6 @@
 {
-  "schema_version": "1.0",
-  "discovery_status": "pending",
+  "schema_version": "1.1",
+  "discovery_status": "confirmed",
   "api": {
     "root": "/services/rest/v3",
     "endpoints": {
@@ -14,129 +14,258 @@
       "processes": "/processes",
       "process_attributes": "/processes/{process_id}/attributes",
       "process_instances": "/processes/{process_id}/instances",
-      "process_instance": "/processes/{process_id}/instances/{instance_id}"
+      "process_instance": "/processes/{process_id}/instances/{instance_id}",
+      "process_start_activities": "/processes/{process_id}/start_activities",
+      "lookup_values": "/lookup_types/{lookup_type}/values"
     }
   },
   "entities": {
     "vendor": {
       "kind": "class",
-      "cmdbuild_id": null,
+      "cmdbuild_id": "Supplier",
       "expected_description": "Supplier",
       "fields": {
-        "code": null,
-        "name": null,
-        "description": null
+        "code": "Code",
+        "name": "CompanyTitle",
+        "description": "Description"
       }
     },
     "contract": {
       "kind": "class",
-      "cmdbuild_id": null,
-      "expected_description": "Contract",
+      "cmdbuild_id": "SupplyContract",
+      "expected_description": "Supply contract",
       "fields": {
-        "code": null,
-        "name": null,
-        "start_date": null,
-        "end_date": null
-      }
+        "code": "Code",
+        "name": "Description",
+        "start_date": "StartDate",
+        "end_date": "ExpirationDate",
+        "vendor": "Supplier"
+      },
+      "required_writable_fields": [
+        "StartDate",
+        "Supplier"
+      ]
     },
     "sla": {
       "kind": "class",
-      "cmdbuild_id": null,
+      "cmdbuild_id": "SLA",
       "expected_description": "SLA",
       "fields": {
-        "code": null,
-        "name": null,
-        "target_minutes": null,
-        "priority": null
-      }
+        "code": "Code",
+        "name": "Description",
+        "target_minutes": "Threshold",
+        "priority": "Priority",
+        "object": "Object",
+        "threshold_type": "ThresholdType",
+        "workflow": "Workflow"
+      },
+      "required_writable_fields": [
+        "Code",
+        "Description"
+      ]
+    },
+    "service_category": {
+      "kind": "class",
+      "cmdbuild_id": "ServiceCategory",
+      "expected_description": "Service category",
+      "fields": {
+        "name": "Description",
+        "state": "State",
+        "index": "Index"
+      },
+      "required_writable_fields": [
+        "Description",
+        "State",
+        "Index"
+      ]
     },
     "business_service": {
       "kind": "class",
-      "cmdbuild_id": null,
-      "expected_description": "Business Service",
+      "cmdbuild_id": "BusinessService",
+      "expected_description": "Business service",
       "fields": {
-        "code": null,
-        "name": null,
-        "criticality": null
-      }
+        "code": "Code",
+        "name": "Name",
+        "criticality": "Impact",
+        "category": "Category",
+        "state": "ServiceState",
+        "contract": "Contract"
+      },
+      "required_writable_fields": [
+        "Name",
+        "Category",
+        "ServiceState"
+      ],
+      "hidden_system_fields": [
+        "Description"
+      ]
     },
     "application": {
       "kind": "class",
-      "cmdbuild_id": null,
+      "cmdbuild_id": "Application",
       "expected_description": "Application",
       "fields": {
-        "code": null,
+        "code": "Code",
         "name": null,
-        "criticality": null
-      }
+        "criticality": null,
+        "environment": "Environment",
+        "server": "Hardware"
+      },
+      "required_writable_fields": [
+        "Hardware"
+      ],
+      "hidden_system_fields": [
+        "Description"
+      ]
     },
     "server": {
       "kind": "class",
-      "cmdbuild_id": null,
+      "cmdbuild_id": "PhysicalServer",
+      "concrete_class_ids": [
+        "PhysicalServer",
+        "VirtualServer"
+      ],
       "expected_description": "Server",
       "fields": {
-        "code": null,
-        "name": null,
-        "hostname": null,
+        "code": "Code",
+        "name": "Description",
+        "hostname": "Hostname",
         "environment": null
-      }
+      },
+      "required_writable_fields": [
+        "Code",
+        "Description",
+        "Hostname"
+      ]
     },
     "incident": {
       "kind": "process",
-      "cmdbuild_id": null,
-      "expected_description": "Incident",
+      "cmdbuild_id": "IncidentMgt",
+      "expected_description": "Incident management",
+      "start_activity": "IM02-HDOpening",
       "fields": {
-        "code": null,
-        "description": null,
+        "code": "Code",
+        "description": "Description",
         "asset_id": null,
         "cve_id": null,
-        "severity": null,
+        "severity": "Priority",
         "detected_at": null,
-        "opened_at": null,
-        "triage_started_at": null,
+        "opened_at": "CreationTimestamp",
+        "triage_started_at": "TakeChargeTimestamp",
         "triage_completed_at": null,
-        "closed_at": null
-      }
+        "closed_at": "ClosureTimestamp"
+      },
+      "read_only_fields": [
+        "triage_started_at"
+      ]
     },
     "change": {
       "kind": "process",
-      "cmdbuild_id": null,
-      "expected_description": "Change",
+      "cmdbuild_id": "ChangeMgt",
+      "expected_description": "Change management",
+      "start_activity": "CM01-Opening",
       "fields": {
-        "code": null,
-        "description": null,
-        "incident_id": null,
+        "code": "Code",
+        "description": "Description",
+        "incident_id": "ParentProcess",
         "asset_id": null,
-        "started_at": null,
-        "completed_at": null
+        "started_at": "CreationTimestamp",
+        "completed_at": "ClosureTimestamp"
       }
     }
   },
   "domains": {
     "vendor_contract": {
-      "cmdbuild_id": null,
+      "cmdbuild_id": "SupplierContract",
       "source": "vendor",
-      "destination": "contract"
+      "destination": "contract",
+      "direction": "direct"
     },
     "contract_sla": {
-      "cmdbuild_id": null,
+      "cmdbuild_id": "SLAContract",
       "source": "contract",
-      "destination": "sla"
+      "destination": "sla",
+      "direction": "inverse"
     },
     "sla_business_service": {
-      "cmdbuild_id": null,
+      "cmdbuild_id": "SLAService",
       "source": "sla",
-      "destination": "business_service"
+      "destination": "business_service",
+      "direction": "direct"
     },
     "business_service_application": {
-      "cmdbuild_id": null,
+      "cmdbuild_id": "CIDependency",
       "source": "business_service",
-      "destination": "application"
+      "destination": "application",
+      "direction": "direct"
     },
     "application_server": {
-      "cmdbuild_id": null,
+      "cmdbuild_id": "HardwareSoftwareInstance",
       "source": "application",
-      "destination": "server"
+      "destination": "server",
+      "direction": "inverse"
+    },
+    "incident_asset": {
+      "cmdbuild_id": "ITProcCI",
+      "source": "incident",
+      "destination": "server",
+      "direction": "direct"
+    },
+    "change_asset": {
+      "cmdbuild_id": "ITProcCI",
+      "source": "change",
+      "destination": "server",
+      "direction": "direct"
+    },
+    "incident_change": {
+      "cmdbuild_id": "GeneratedITProc",
+      "source": "incident",
+      "destination": "change",
+      "direction": "direct"
+    }
+  },
+  "lookups": {
+    "sla_object": {
+      "type": "SLA - Object",
+      "codes": {
+        "triage": "charge",
+        "resolution": "resolution"
+      }
+    },
+    "sla_threshold_type": {
+      "type": "SLA - ThresholdType",
+      "codes": {
+        "minutes": "MM"
+      }
+    },
+    "workflow": {
+      "type": "ITProcessClassification - Workflow",
+      "codes": {
+        "incident": "IM",
+        "change": "CM"
+      }
+    },
+    "service_category_state": {
+      "type": "ServiceCategory - State",
+      "codes": {
+        "active": "Active"
+      }
+    },
+    "business_service_state": {
+      "type": "Service - State",
+      "codes": {}
+    },
+    "business_service_impact": {
+      "type": "Service - Impact",
+      "codes": {}
+    },
+    "application_environment": {
+      "type": "SWInstance - Environment",
+      "codes": {}
+    },
+    "process_priority": {
+      "type": "ITProc - Priority",
+      "codes": {}
     }
   },
   "integration": {
@@ -147,6 +276,24 @@
       "cve_id",
       "asset_id"
     ],
+    "relation_fields": {
+      "incident.asset_id": "incident_asset",
+      "change.asset_id": "change_asset"
+    },
+    "external_fields": {
+      "application": [
+        "name",
+        "criticality"
+      ],
+      "server": [
+        "environment"
+      ],
+      "incident": [
+        "cve_id",
+        "detected_at",
+        "triage_completed_at"
+      ]
+    },
     "target_tables": {
       "technical_vulnerabilities": null,
       "assets": null,
