@@ -9,6 +9,17 @@ sources:
     local_relative_path: VulZoo
     licence_note: Verify upstream licences and per-source terms before redistribution.
     enabled: true
+  github_advisory:
+    url: https://github.com/NUS-Curiosity/VulZoo
+    purpose: Verified GHSA remediation metadata and corroborated same-CVE commit references
+    retrieval_date: "2026-08-24"
+    snapshot_date: null
+    snapshot_date_note: "Each retained advisory has distinct published and modified UTC times."
+    upstream_commit: "c504fa2537300a42fea1ff0adabfa9ca6687e435"
+    checksum: "git-tree-sha1:de870e011e777b200a49a77593438b0ebeb857e5"
+    local_relative_path: VulZoo/processed/github-advisory-database
+    licence_note: Retain bounded metadata only; no advisory descriptions or patch bodies.
+    enabled: true
   diversevul:
     url: https://github.com/wagner-group/diversevul
     purpose: Function-level C/C++ research labels joined to canonical VulZoo CVEs

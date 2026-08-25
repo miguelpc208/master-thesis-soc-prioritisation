@@ -10,6 +10,7 @@ snapshot.
 | DiverseVul | Function-level C/C++ vulnerability research labels | acquired — pinned dataset and metadata | Hash both JSONL files; preserve local source boundary and evidence provenance |
 | FIRST EPSS | Date-pinned exploitation probability | Acquired — aligned 15-day panel plus retained archive | Bulk daily CSV; record date, model version, checksum and retrieval |
 | CISA KEV | Known-exploitation evidence | Acquired inside approved VulZoo snapshot | Preserve `dateAdded`, catalogue date and retrieval time; enforce declared as-of mode |
+| GitHub advisories via VulZoo | Authoritative remediation and affected-package metadata | Acquired — pinned processed metadata subtree | Verify authoritative CVE alias, non-withdrawal, conservative source availability and exact commit corroboration |
 | Qualys-like proxy | Transparent comparison only | Disabled | Never call it Qualys data or proprietary score reproduction |
 
 The bundled VulZoo processed snapshot was described upstream as last updated on 2024-07-06 at
@@ -45,6 +46,31 @@ for the approved NVD, CVE and KEV normalisation boundary.
 
 See [TEMPORAL_EVIDENCE_CONTRACT.md](TEMPORAL_EVIDENCE_CONTRACT.md) for strict retained-snapshot
 availability, source-effective reconstruction, conservative date-only handling and claim limits.
+
+## Approved GitHub advisory metadata collection
+
+- Retrieval date: 2026-08-24; exact UTC collection time remains in the acquisition manifest.
+- Parent pinned VulZoo commit: `c504fa2537300a42fea1ff0adabfa9ca6687e435`.
+- Approved collection: `processed/github-advisory-database`.
+- Pinned collection Git tree: `de870e011e777b200a49a77593438b0ebeb857e5`.
+- Acquired advisory metadata files: 21,729; collection size: approximately 57.36 MiB.
+- Source-audited GHSA relationship identifiers: 18,504; authoritative CVE alias links: 18,487;
+  conflicting alias links: 17; withdrawn advisory documents: 138.
+- Source-audited package entries: 34,177; source fixed-version range events: 30,541.
+- Source-audited same-CVE direct-commit URL/hash corroborations: 12,435.
+- A read-only anomaly audit found 987 valid records with `modified < published`; the approved
+  availability bound is `max(published, modified)` while both source timestamps remain unchanged.
+  Its fingerprint is `77458e225ef27558589512b0d773f4b6bc947d45f3d6bd29bdbffd7f1ada766d`.
+- Accepted rows are stricter than the source-audit counts because withdrawn, future-timestamped,
+  unknown-CVE and conflicting records are rejected.
+- Advisory descriptions, patch bodies, Exploit-DB records and proof-of-concept payloads remain
+  outside scope; the unrelated `rel-cve-poc.json` relationship is never opened.
+- Local retrieval occurred after the aligned 2025 scenario. Source-effective reconstruction is
+  possible only under the conservative retained source-availability time; strict historical
+  availability and complete advisory-version history are not claimed.
+
+See [GITHUB_ADVISORY_REMEDIATION_CONTRACT.md](GITHUB_ADVISORY_REMEDIATION_CONTRACT.md) for
+canonical-CVE aliases, package versions, corroborated commit references and temporal rules.
 
 ## DiverseVul approved working snapshot
 

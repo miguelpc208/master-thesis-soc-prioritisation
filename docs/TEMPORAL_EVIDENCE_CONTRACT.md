@@ -50,6 +50,9 @@ than every historical version, it must never be described as exact historical gr
 | NVD CPE configuration match | CVE `lastModified` | CVE `lastModified` | Later of observation and retrieval | Single snapshot |
 | DiverseVul label | Unknown | Unknown | Local retrieval | Unknown snapshot date |
 | FIRST EPSS score | Score date at UTC day end | Score date at UTC day end | Later of score date and retrieval | Daily panel required |
+| Verified GitHub advisory | GHSA publication | Retained GHSA modification | Later of `max(publication, modification)` and collection retrieval | Single snapshot |
+| GHSA fixed-version event | `max(GHSA publication, modification)` | Retained GHSA modification | Later of source availability and collection retrieval | Single snapshot |
+| Corroborated patch commit | Matching GHSA source availability, otherwise unknown | Matching GHSA source availability, otherwise unknown | Later of verified anchor and collection retrieval | Single snapshot |
 
 Date-only evidence is placed at 23:59:59 UTC, rather than at the start of the day, so a decision
 cannot see a fact earlier than the source precision supports.
@@ -62,6 +65,11 @@ cannot see a fact earlier than the source precision supports.
   separate CMDB matcher proves the asset/product/version conditions.
 - DiverseVul labels are offline research annotations. They are never live threat intelligence,
   exploit proof or business context.
+- Advisory/package metadata supports bounded remediation context only after the later of retained
+  GHSA publication and modification. A fixed version does not prove a deployed fix or actual asset
+  applicability.
+- Corroborated commit URLs without an exact same-CVE match in an accepted advisory remain undated
+  and are excluded from historical reconstruction rather than inheriting an invented timestamp.
 - The audit filters and counts evidence; the current synthetic E1/E2 simulator is not yet wired to
   the real SQLite observations.
 
@@ -87,4 +95,6 @@ scenario starting on 2025-03-22. The superseded 2025-12-31 through 2026-01-14 pa
 database as immutable provenance but is ineligible at the earlier March decision cut-offs. NVD and
 KEV remain single retained snapshots, so neither mode establishes exact historical ground truth
 across all evidence. All experiments must record their mode, cut-off and approved EPSS model
-version. See [EPSS_INGESTION_CONTRACT.md](EPSS_INGESTION_CONTRACT.md).
+version. Approved GitHub advisories are likewise one retained snapshot, not a complete historical
+advisory-version panel. See [EPSS_INGESTION_CONTRACT.md](EPSS_INGESTION_CONTRACT.md) and
+[GITHUB_ADVISORY_REMEDIATION_CONTRACT.md](GITHUB_ADVISORY_REMEDIATION_CONTRACT.md).

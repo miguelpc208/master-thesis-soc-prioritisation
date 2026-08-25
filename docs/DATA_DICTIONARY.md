@@ -74,6 +74,33 @@ See `VULNERABILITY_INGESTION_CONTRACT.md` for precedence and rejection rules and
 `TEMPORAL_EVIDENCE_CONTRACT.md` for the as-of modes and claim boundary, and
 `EPSS_INGESTION_CONTRACT.md` for historical daily-panel provenance and exclusions.
 
+## GitHub advisory and remediation fields
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `github_advisory_id` | string PK | Deterministic approved-snapshot GHSA identity |
+| `ghsa_id` | string | Authoritative advisory identifier validated against the source path |
+| `published_at_utc` | UTC datetime | Authoritative GHSA publication; never assigned to an unrelated commit |
+| `modified_at_utc` | UTC datetime | Authoritative retained GHSA version time, preserved even when earlier than publication |
+| `source_available_at_utc` | UTC datetime | Conservative `max(published_at_utc, modified_at_utc)` availability bound |
+| `withdrawn_at_utc` | nullable UTC datetime | Always null in accepted rows; all withdrawn source documents are rejected |
+| `source_relative_path` | string | Audited relative path beneath the approved advisory collection |
+| `record_sha256` | SHA-256 | Digest of the locally inspected advisory metadata document |
+| `package_purl` | nullable string | Source-reported package URL, never inferred when absent |
+| `source_position` | nonnegative integer | Original ordered advisory package/version position |
+| `range_position`, `event_position` | nonnegative integer | Original ordered package range and event positions |
+| `range_type` | bounded string | Source-reported version-range interpretation |
+| `event_kind` | enum | `introduced`, `fixed`, `last_affected` or `limit` |
+| `event_value` | bounded string | Exact source version/event value without inferred fix applicability |
+| `reference_kind` | enum | Exact same-CVE hash/URL `corroborated_commit` |
+| `evidence_time_status` | enum | `authoritative_advisory_available` or `undated_context_only` |
+| `anchor_github_advisory_id` | nullable string FK | Accepted same-CVE advisory containing the identical commit URL |
+
+Advisory CVE links require the source document's authoritative `aliases` field and an existing
+canonical CVE. Undated corroborated commits remain outside historical reconstruction. Raw advisory
+descriptions, patch bodies and exploit payloads are never stored. See
+`GITHUB_ADVISORY_REMEDIATION_CONTRACT.md` for the complete evidence and temporal rules.
+
 ## DiverseVul function-research fields
 
 | Field | Type | Meaning |

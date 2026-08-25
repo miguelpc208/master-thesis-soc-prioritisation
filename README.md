@@ -38,6 +38,7 @@ python -m thesis_pipeline.cli init-db --path "$env:THESIS_DATA_ROOT\databases\vu
 python -m thesis_pipeline.cli ingest-vulzoo --config configs/data_sources.yaml --database "$env:THESIS_DATA_ROOT\databases\vulzoo-ingestion.sqlite" --coverage-report outputs/vulzoo-coverage-v2.json
 python -m thesis_pipeline.cli ingest-diversevul --config configs/data_sources.yaml --database "$env:THESIS_DATA_ROOT\databases\vulzoo-ingestion.sqlite" --acquisition-manifest "$env:THESIS_DATA_ROOT\DiverseVul\manifests\APPROVED-MANIFEST.json" --profile-report outputs/APPROVED-DIVERSEVUL-PROFILE.json
 python -m thesis_pipeline.cli ingest-epss-panel --config configs/data_sources.yaml --database "$env:THESIS_DATA_ROOT\databases\vulzoo-ingestion.sqlite" --acquisition-manifest "$env:THESIS_DATA_ROOT\snapshots\epss\manifests\APPROVED-MANIFEST.json"
+python -m thesis_pipeline.cli ingest-github-advisories --config configs/data_sources.yaml --database "$env:THESIS_DATA_ROOT\databases\vulzoo-ingestion.sqlite" --acquisition-manifest "$env:THESIS_DATA_ROOT\snapshots\vulzoo-github-advisory\manifests\APPROVED-MANIFEST.json" --audit-report outputs/APPROVED-PATCH-ADVISORY-AUDIT.json --decision-at "2025-03-22T09:00:00Z"
 python -m thesis_pipeline.cli audit-technical-as-of --database "$env:THESIS_DATA_ROOT\databases\vulzoo-ingestion.sqlite" --decision-at "2026-08-24T23:59:59Z" --mode strict_snapshot
 ```
 
@@ -60,6 +61,13 @@ VulZoo CVEs. Each day retains separate source and execution provenance; valid CV
 pinned VulZoo snapshot are counted and excluded without creating synthetic canonical records.
 The active March-April 2025 panel aligns with the retained NVD and KEV snapshots; the superseded
 January 2026 panel remains archived without influencing the earlier scenario cut-offs.
+
+`ingest-github-advisories` re-verifies the separately approved pinned advisory collection, its
+acquisition manifest and the read-only relationship audit. It retains only non-withdrawn,
+time-eligible advisories with authoritative canonical-CVE aliases, bounded package/version
+metadata, and same-CVE commit hashes corroborated by direct commit URLs. Commit references without
+an authoritative advisory source-availability anchor remain undated and historically ineligible;
+advisory descriptions, patch bodies and exploit payloads are never copied.
 
 `audit-technical-as-of` opens SQLite read-only and reports which normalized observations are
 eligible at an explicit UTC decision cut-off. `strict_snapshot` uses retained-snapshot availability;
@@ -112,6 +120,8 @@ observed. The active EPSS panel is complete only for its approved March-April 20
 retained NVD and KEV sources remain single snapshots, so historical reconstruction is not exact
 ground truth. Legacy-only CVEs without recoverable publication timestamps cannot be treated as
 historically eligible by inferring missing dates.
+Retained GHSA records are one approved snapshot, not a complete historical advisory panel;
+fixed-version events and corroborated commits do not prove asset applicability or deployed fixes.
 E3/E4 assumptions require calibration and sensitivity analysis. E5/E6 remain optional.
 
 ## Source anchors

@@ -9,6 +9,7 @@ import subprocess
 import sys
 
 from thesis_pipeline.config import ConfigurationError, load_experiment, load_scenario
+from thesis_pipeline.ingestion.advisories import ingest_github_advisories
 from thesis_pipeline.ingestion.coverage import scan_vulzoo_coverage
 from thesis_pipeline.ingestion.diversevul import ingest_diversevul
 from thesis_pipeline.ingestion.epss import ingest_epss_panel
@@ -120,6 +121,17 @@ def build_parser() -> argparse.ArgumentParser:
     epss.add_argument("--acquisition-manifest", required=True)
     epss.add_argument("--progress-every", type=int, default=100000)
 
+    advisory = subparsers.add_parser(
+        "ingest-github-advisories",
+        help="Integrate verified GHSA remediation metadata and corroborated patch commits",
+    )
+    advisory.add_argument("--config", required=True)
+    advisory.add_argument("--database", required=True)
+    advisory.add_argument("--acquisition-manifest", required=True)
+    advisory.add_argument("--audit-report", required=True)
+    advisory.add_argument("--decision-at", required=True)
+    advisory.add_argument("--progress-every", type=int, default=1000)
+
     temporal = subparsers.add_parser(
         "audit-technical-as-of",
         help="Audit technical evidence available at a UTC decision cutoff without mutation",
@@ -209,6 +221,17 @@ def main(argv: list[str] | None = None) -> int:
                 args.config,
                 args.database,
                 args.acquisition_manifest,
+                progress_every=args.progress_every,
+            )
+            print(json.dumps(ingestion, indent=2, sort_keys=True))
+            return 0
+        if args.command == "ingest-github-advisories":
+            ingestion = ingest_github_advisories(
+                args.config,
+                args.database,
+                args.acquisition_manifest,
+                args.audit_report,
+                args.decision_at,
                 progress_every=args.progress_every,
             )
             print(json.dumps(ingestion, indent=2, sort_keys=True))

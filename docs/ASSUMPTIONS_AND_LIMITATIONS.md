@@ -24,6 +24,15 @@
   one offset-free timestamp remains ambiguous and must not be silently interpreted as UTC.
 - The as-of view prevents look-ahead under its declared mode; source-effective reconstruction from
   one retained snapshot is not exact historical ground truth.
+- GitHub advisory metadata is one locally acquired retained version, not a complete historical
+  advisory panel. Authoritative publication and modification timestamps may be non-monotonic;
+  reconstruction therefore uses their conservative maximum without claiming earlier versions.
+  Withdrawn, conflicting and future-timestamped records remain excluded.
+- Advisory fixed-version events and corroborated commit references are remediation context only:
+  they do not establish asset applicability, vendor deployment or actual remediation. Commits
+  without an exact authoritative advisory URL remain undated and historically ineligible.
+- Advisory descriptions, patch bodies, proof-of-concept links and exploit payloads are excluded;
+  no operational exploit capability can be inferred from this technical dataset.
 - The real technical SQLite observations are not yet wired into the synthetic experiment runner.
 - E3 optimisation and the full E4 scheduler are not complete.
 - Smoke metrics are not research results and cannot estimate actual business impact.
