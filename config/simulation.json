@@ -1,0 +1,28 @@
+{
+  "schema_version": "1.0",
+  "simulation": {
+    "seed": 42,
+    "start_date": "2024-01-01",
+    "end_date": "2025-12-31"
+  },
+  "population": {
+    "vendors": null,
+    "contracts": null,
+    "slas": null,
+    "business_services": null,
+    "applications": null,
+    "servers": null,
+    "vulnerability_occurrences": null
+  },
+  "time_model": {
+    "timezone": "UTC",
+    "enforce_technical_evidence_as_of_detection": true
+  },
+  "evaluation": {
+    "baseline_policies": [],
+    "candidate_policies": [],
+    "same_input_population": true,
+    "same_operational_capacity": true,
+    "same_random_seed": true
+  }
+}

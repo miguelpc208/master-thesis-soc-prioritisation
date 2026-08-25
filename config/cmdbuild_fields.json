@@ -1,0 +1,162 @@
+{
+  "schema_version": "1.0",
+  "discovery_status": "pending",
+  "api": {
+    "root": "/services/rest/v3",
+    "endpoints": {
+      "sessions": "/sessions",
+      "classes": "/classes",
+      "class_attributes": "/classes/{class_id}/attributes",
+      "cards": "/classes/{class_id}/cards",
+      "card": "/classes/{class_id}/cards/{card_id}",
+      "card_relations": "/classes/{class_id}/cards/{card_id}/relations",
+      "domains": "/domains",
+      "processes": "/processes",
+      "process_attributes": "/processes/{process_id}/attributes",
+      "process_instances": "/processes/{process_id}/instances",
+      "process_instance": "/processes/{process_id}/instances/{instance_id}"
+    }
+  },
+  "entities": {
+    "vendor": {
+      "kind": "class",
+      "cmdbuild_id": null,
+      "expected_description": "Supplier",
+      "fields": {
+        "code": null,
+        "name": null,
+        "description": null
+      }
+    },
+    "contract": {
+      "kind": "class",
+      "cmdbuild_id": null,
+      "expected_description": "Contract",
+      "fields": {
+        "code": null,
+        "name": null,
+        "start_date": null,
+        "end_date": null
+      }
+    },
+    "sla": {
+      "kind": "class",
+      "cmdbuild_id": null,
+      "expected_description": "SLA",
+      "fields": {
+        "code": null,
+        "name": null,
+        "target_minutes": null,
+        "priority": null
+      }
+    },
+    "business_service": {
+      "kind": "class",
+      "cmdbuild_id": null,
+      "expected_description": "Business Service",
+      "fields": {
+        "code": null,
+        "name": null,
+        "criticality": null
+      }
+    },
+    "application": {
+      "kind": "class",
+      "cmdbuild_id": null,
+      "expected_description": "Application",
+      "fields": {
+        "code": null,
+        "name": null,
+        "criticality": null
+      }
+    },
+    "server": {
+      "kind": "class",
+      "cmdbuild_id": null,
+      "expected_description": "Server",
+      "fields": {
+        "code": null,
+        "name": null,
+        "hostname": null,
+        "environment": null
+      }
+    },
+    "incident": {
+      "kind": "process",
+      "cmdbuild_id": null,
+      "expected_description": "Incident",
+      "fields": {
+        "code": null,
+        "description": null,
+        "asset_id": null,
+        "cve_id": null,
+        "severity": null,
+        "detected_at": null,
+        "opened_at": null,
+        "triage_started_at": null,
+        "triage_completed_at": null,
+        "closed_at": null
+      }
+    },
+    "change": {
+      "kind": "process",
+      "cmdbuild_id": null,
+      "expected_description": "Change",
+      "fields": {
+        "code": null,
+        "description": null,
+        "incident_id": null,
+        "asset_id": null,
+        "started_at": null,
+        "completed_at": null
+      }
+    }
+  },
+  "domains": {
+    "vendor_contract": {
+      "cmdbuild_id": null,
+      "source": "vendor",
+      "destination": "contract"
+    },
+    "contract_sla": {
+      "cmdbuild_id": null,
+      "source": "contract",
+      "destination": "sla"
+    },
+    "sla_business_service": {
+      "cmdbuild_id": null,
+      "source": "sla",
+      "destination": "business_service"
+    },
+    "business_service_application": {
+      "cmdbuild_id": null,
+      "source": "business_service",
+      "destination": "application"
+    },
+    "application_server": {
+      "cmdbuild_id": null,
+      "source": "application",
+      "destination": "server"
+    }
+  },
+  "integration": {
+    "technical_vulnerability_key": "cve_id",
+    "asset_key": "asset_id",
+    "occurrence_key": "vulnerability_occurrence_id",
+    "occurrence_grain": [
+      "cve_id",
+      "asset_id"
+    ],
+    "target_tables": {
+      "technical_vulnerabilities": null,
+      "assets": null,
+      "findings": null,
+      "alerts": null
+    },
+    "provenance": {
+      "technical": "public_dataset",
+      "business_context": "synthetic",
+      "soc_operations": "synthetic"
+    }
+  }
+}
