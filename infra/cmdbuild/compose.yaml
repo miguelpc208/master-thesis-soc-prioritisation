@@ -1,0 +1,59 @@
+name: thesis-cmdbuild
+
+services:
+  cmdbuild_db:
+    image: postgis/postgis@sha256:08f4b1e1f4a571008c60272ceb9e0d1f9f8f643792d006b74a35b1bec44c2218
+    pull_policy: never
+    restart: unless-stopped
+    mem_limit: 4g
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:?POSTGRES_USER is required}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+      TZ: UTC
+      PGTZ: UTC
+    ports:
+      - "127.0.0.1:${POSTGRES_PORT:-55432}:5432"
+    volumes:
+      - cmdbuild_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - pg_isready -U "$${POSTGRES_USER}" -d "$${POSTGRES_USER}"
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+
+  cmdbuild_app:
+    image: itmicus/cmdbuild@sha256:7a879e87b02878e98141da98dc4a44227a19d48755a22a3ce2622a86438e52d6
+    pull_policy: never
+    restart: unless-stopped
+    mem_limit: 6g
+    depends_on:
+      cmdbuild_db:
+        condition: service_healthy
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:?POSTGRES_USER is required}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+      POSTGRES_PORT: "5432"
+      POSTGRES_HOST: cmdbuild_db
+      POSTGRES_DB: ${POSTGRES_DATABASE:?POSTGRES_DATABASE is required}
+      CMDBUILD_DUMP: ${CMDBUILD_DUMP:-empty.dump.xz}
+      JAVA_OPTS: "-Xms1024m -Xmx4096m -Duser.timezone=UTC"
+      TZ: UTC
+    ports:
+      - "127.0.0.1:${CMDBUILD_HTTP_PORT:-8090}:8080"
+    volumes:
+      - cmdbuild_tomcat_data:/usr/local/tomcat
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - curl -fsSL http://localhost:8080/cmdbuild/ui/ >/dev/null
+      interval: 30s
+      timeout: 10s
+      retries: 15
+      start_period: 180s
+
+volumes:
+  cmdbuild_postgres_data:
+  cmdbuild_tomcat_data:
