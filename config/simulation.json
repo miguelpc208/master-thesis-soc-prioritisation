@@ -1,18 +1,20 @@
 {
-  "schema_version": "1.0",
+  "schema_version": "1.1",
   "simulation": {
-    "seed": 42,
-    "start_date": "2024-01-01",
-    "end_date": "2025-12-31"
+    "scenario_id": "smoke",
+    "scenario_path": "configs/scenarios/smoke.yaml",
+    "seed": 20260803,
+    "start_date": "2025-03-22",
+    "end_date": "2025-03-25"
   },
   "population": {
-    "vendors": null,
-    "contracts": null,
-    "slas": null,
-    "business_services": null,
-    "applications": null,
-    "servers": null,
-    "vulnerability_occurrences": null
+    "vendors": 3,
+    "contracts": 10,
+    "slas": 8,
+    "business_services": 10,
+    "applications": 100,
+    "servers": 100,
+    "vulnerability_occurrences": 240
   },
   "time_model": {
     "timezone": "UTC",
@@ -24,5 +26,17 @@
     "same_input_population": true,
     "same_operational_capacity": true,
     "same_random_seed": true
+  },
+  "generation": {
+    "vendor_strategy": "one_per_department",
+    "contract_strategy": "one_per_business_service",
+    "application_strategy": "one_per_server",
+    "sla_strategy": "shared_by_severity_and_object",
+    "severity_to_priority": {
+      "low": "normal",
+      "medium": "medium",
+      "high": "high",
+      "critical": "critical"
+    }
   }
 }

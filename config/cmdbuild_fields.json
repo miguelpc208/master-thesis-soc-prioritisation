@@ -253,19 +253,34 @@
     },
     "business_service_state": {
       "type": "Service - State",
-      "codes": {}
+      "codes": {
+        "active": "Active",
+        "inactive": "NonActive"
+      }
     },
     "business_service_impact": {
       "type": "Service - Impact",
-      "codes": {}
+      "codes": {
+        "high": "High",
+        "medium": "Medium",
+        "low": "Low"
+      }
     },
     "application_environment": {
       "type": "SWInstance - Environment",
-      "codes": {}
+      "codes": {
+        "production": "Production",
+        "test": "Test"
+      }
     },
     "process_priority": {
       "type": "ITProc - Priority",
-      "codes": {}
+      "codes": {
+        "normal": "1",
+        "medium": "2",
+        "high": "3",
+        "critical": "4"
+      }
     }
   },
   "integration": {
