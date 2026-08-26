@@ -8,6 +8,12 @@ from thesis_pipeline.cmdbuild.client import (
     CMDBuildResponseError,
     CMDBuildSettings,
 )
+from thesis_pipeline.cmdbuild.public_cve import (
+    PublicCVEBindingError,
+    PublicCVEBindingResult,
+    PublicCVERecord,
+    bind_public_cves,
+)
 
 __all__ = [
     "CMDBuildAuthenticationError",
@@ -16,4 +22,8 @@ __all__ = [
     "CMDBuildError",
     "CMDBuildResponseError",
     "CMDBuildSettings",
+    "PublicCVEBindingError",
+    "PublicCVEBindingResult",
+    "PublicCVERecord",
+    "bind_public_cves",
 ]

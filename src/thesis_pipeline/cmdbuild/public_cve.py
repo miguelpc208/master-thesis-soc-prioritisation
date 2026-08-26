@@ -1,0 +1,519 @@
+"""Deterministically bind synthetic occurrences to public as-of CVE evidence."""
+
+from __future__ import annotations
+
+import hashlib
+import heapq
+import json
+import re
+import sqlite3
+from collections import Counter
+from collections.abc import Iterator
+from dataclasses import dataclass, replace
+from datetime import UTC, date, datetime, time
+from pathlib import Path
+from typing import Any
+
+from thesis_pipeline.models import Finding, ScenarioConfig
+
+CVE_PATTERN = re.compile(r"^CVE-\d{4}-\d{4,}$")
+SEVERITIES = ("critical", "high", "medium", "low")
+
+
+class PublicCVEBindingError(RuntimeError):
+    """Raised when a temporally safe public-CVE binding cannot be produced."""
+
+
+@dataclass(frozen=True, slots=True)
+class PublicCVERecord:
+    """Technical evidence available before the earliest synthetic finding."""
+
+    cve_id: str
+    published_at_utc: datetime
+    source_name: str
+    cvss: float
+    cvss_version: str | None
+    cvss_observed_at_utc: datetime
+    cvss_source_name: str
+    epss_probability: float
+    epss_percentile: float | None
+    epss_score_date: date
+    epss_model_version: str | None
+    epss_source_name: str
+    kev: bool
+    kev_date_added: date | None
+    kev_catalogue_date: date
+    known_ransomware_use: str | None
+    diversevul: bool
+
+
+@dataclass(frozen=True, slots=True)
+class PublicCVEBinding:
+    """One synthetic occurrence mapped to one public CVE."""
+
+    synthetic_cve_id: str
+    asset_id: str
+    public: PublicCVERecord
+
+
+@dataclass(frozen=True, slots=True)
+class PublicCVEBindingResult:
+    """Bound findings and an auditable deterministic selection manifest."""
+
+    findings: tuple[Finding, ...]
+    bindings: tuple[PublicCVEBinding, ...]
+    source_dataset_fingerprint: str
+    binding_fingerprint: str
+    database_name: str
+    earliest_finding_utc: datetime
+    epss_as_of_date: date
+    eligible_pool_counts: tuple[tuple[str, int], ...]
+
+
+def _parse_datetime(value: Any, field_name: str) -> datetime:
+    if not isinstance(value, str) or not value.strip():
+        raise PublicCVEBindingError(f"Invalid timestamp in public evidence: {field_name}")
+    try:
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError as exc:
+        raise PublicCVEBindingError(
+            f"Invalid timestamp in public evidence: {field_name}"
+        ) from exc
+    if parsed.tzinfo is None or parsed.utcoffset() is None:
+        raise PublicCVEBindingError(
+            f"Public evidence timestamp is not timezone-aware: {field_name}"
+        )
+    return parsed.astimezone(UTC)
+
+
+def _parse_date(value: Any, field_name: str) -> date:
+    if not isinstance(value, str) or not value.strip():
+        raise PublicCVEBindingError(f"Invalid date in public evidence: {field_name}")
+    try:
+        return date.fromisoformat(value[:10])
+    except ValueError as exc:
+        raise PublicCVEBindingError(f"Invalid date in public evidence: {field_name}") from exc
+
+
+def _optional_date(value: Any, field_name: str) -> date | None:
+    if value is None:
+        return None
+    return _parse_date(value, field_name)
+
+
+def _severity(score: float) -> str:
+    if score >= 9.0:
+        return "critical"
+    if score >= 7.0:
+        return "high"
+    if score >= 4.0:
+        return "medium"
+    return "low"
+
+
+def _stable_rank(seed: int, cve_id: str) -> int:
+    digest = hashlib.sha256(f"{seed}|{cve_id}".encode()).digest()
+    return int.from_bytes(digest, byteorder="big", signed=False)
+
+
+def _connect_read_only(database_path: Path) -> sqlite3.Connection:
+    if database_path.name != "vulzoo-ingestion.sqlite":
+        raise PublicCVEBindingError(
+            "Public-CVE binding requires the canonical vulzoo-ingestion.sqlite database"
+        )
+    if not database_path.is_file():
+        raise PublicCVEBindingError("Canonical vulnerability database does not exist")
+    connection = sqlite3.connect(database_path.resolve().as_uri() + "?mode=ro", uri=True)
+    connection.row_factory = sqlite3.Row
+    connection.execute("PRAGMA query_only = ON")
+    return connection
+
+
+def _validate_schema(connection: sqlite3.Connection) -> None:
+    required = {
+        "cve": {"cve_id", "published_at_utc", "source_name"},
+        "cvss_observation": {
+            "cvss_observation_id",
+            "cve_id",
+            "version",
+            "base_score",
+            "observed_at_utc",
+            "source_name",
+            "metric_type",
+        },
+        "epss_observation": {
+            "epss_observation_id",
+            "cve_id",
+            "score",
+            "percentile",
+            "score_date",
+            "model_version",
+            "source_name",
+        },
+        "kev_observation": {
+            "cve_id",
+            "date_added",
+            "catalogue_date",
+            "known_ransomware_use",
+        },
+        "diversevul_function_cve": {"cve_id"},
+    }
+    tables = {
+        row[0]
+        for row in connection.execute(
+            "SELECT name FROM sqlite_master WHERE type = 'table'"
+        )
+    }
+    missing_tables = sorted(set(required) - tables)
+    if missing_tables:
+        raise PublicCVEBindingError(
+            "Canonical vulnerability database is missing tables: " + ", ".join(missing_tables)
+        )
+    for table_name, required_columns in required.items():
+        columns = {
+            row[1]
+            for row in connection.execute(f'PRAGMA table_info("{table_name}")')
+        }
+        missing_columns = sorted(required_columns - columns)
+        if missing_columns:
+            raise PublicCVEBindingError(
+                f"Table '{table_name}' is missing columns: " + ", ".join(missing_columns)
+            )
+
+
+def _candidate_query() -> str:
+    return """
+        WITH
+        ranked_cvss AS (
+            SELECT
+                cve_id,
+                base_score,
+                version,
+                observed_at_utc,
+                source_name,
+                ROW_NUMBER() OVER (
+                    PARTITION BY cve_id
+                    ORDER BY
+                        datetime(observed_at_utc) DESC,
+                        CASE version
+                            WHEN '4.0' THEN 0
+                            WHEN '3.1' THEN 1
+                            WHEN '3.0' THEN 2
+                            WHEN '2.0' THEN 3
+                            ELSE 4
+                        END,
+                        CASE lower(COALESCE(metric_type, ''))
+                            WHEN 'primary' THEN 0
+                            ELSE 1
+                        END,
+                        cvss_observation_id
+                ) AS evidence_rank
+            FROM cvss_observation
+            WHERE base_score IS NOT NULL
+              AND base_score BETWEEN 0.0 AND 10.0
+              AND observed_at_utc IS NOT NULL
+              AND datetime(observed_at_utc) <= datetime(:cutoff)
+        ),
+        epss_panel AS (
+            SELECT MAX(score_date) AS score_date
+            FROM epss_observation
+            WHERE date(score_date) < date(:cutoff)
+        ),
+        ranked_epss AS (
+            SELECT
+                observation.cve_id,
+                observation.score,
+                observation.percentile,
+                observation.score_date,
+                observation.model_version,
+                observation.source_name,
+                ROW_NUMBER() OVER (
+                    PARTITION BY observation.cve_id
+                    ORDER BY observation.epss_observation_id
+                ) AS evidence_rank
+            FROM epss_observation AS observation
+            INNER JOIN epss_panel AS panel
+                ON panel.score_date = observation.score_date
+            WHERE observation.score IS NOT NULL
+              AND observation.score BETWEEN 0.0 AND 1.0
+        ),
+        kev_snapshot AS (
+            SELECT MAX(catalogue_date) AS catalogue_date
+            FROM kev_observation
+            WHERE date(catalogue_date) <= date(:cutoff)
+        ),
+        eligible_kev AS (
+            SELECT
+                observation.cve_id,
+                MIN(observation.date_added) AS date_added,
+                MAX(observation.known_ransomware_use) AS known_ransomware_use
+            FROM kev_observation AS observation
+            INNER JOIN kev_snapshot AS snapshot
+                ON snapshot.catalogue_date = observation.catalogue_date
+            WHERE date(observation.date_added) <= date(:cutoff)
+            GROUP BY observation.cve_id
+        ),
+        diversevul AS (
+            SELECT DISTINCT cve_id
+            FROM diversevul_function_cve
+            WHERE cve_id IS NOT NULL
+        )
+        SELECT
+            vulnerability.cve_id,
+            vulnerability.published_at_utc,
+            vulnerability.source_name,
+            cvss.base_score,
+            cvss.version,
+            cvss.observed_at_utc,
+            cvss.source_name AS cvss_source_name,
+            epss.score,
+            epss.percentile,
+            epss.score_date,
+            epss.model_version,
+            epss.source_name AS epss_source_name,
+            kev.date_added AS kev_date_added,
+            snapshot.catalogue_date AS kev_catalogue_date,
+            kev.known_ransomware_use,
+            CASE WHEN kev.cve_id IS NULL THEN 0 ELSE 1 END AS is_kev,
+            CASE WHEN diverse.cve_id IS NULL THEN 0 ELSE 1 END AS is_diversevul
+        FROM cve AS vulnerability
+        INNER JOIN ranked_cvss AS cvss
+            ON cvss.cve_id = vulnerability.cve_id
+           AND cvss.evidence_rank = 1
+        INNER JOIN ranked_epss AS epss
+            ON epss.cve_id = vulnerability.cve_id
+           AND epss.evidence_rank = 1
+        CROSS JOIN kev_snapshot AS snapshot
+        LEFT JOIN eligible_kev AS kev
+            ON kev.cve_id = vulnerability.cve_id
+        LEFT JOIN diversevul AS diverse
+            ON diverse.cve_id = vulnerability.cve_id
+        WHERE vulnerability.published_at_utc IS NOT NULL
+          AND datetime(vulnerability.published_at_utc) <= datetime(:cutoff)
+        ORDER BY vulnerability.cve_id
+    """
+
+
+def _iter_candidates(
+    connection: sqlite3.Connection,
+    cutoff: datetime,
+) -> Iterator[PublicCVERecord]:
+    cursor = connection.execute(_candidate_query(), {"cutoff": cutoff.isoformat()})
+    for row in cursor:
+        cve_id = row["cve_id"]
+        if not isinstance(cve_id, str) or CVE_PATTERN.fullmatch(cve_id) is None:
+            continue
+        record = PublicCVERecord(
+            cve_id=cve_id,
+            published_at_utc=_parse_datetime(row["published_at_utc"], "published_at_utc"),
+            source_name=str(row["source_name"]),
+            cvss=float(row["base_score"]),
+            cvss_version=None if row["version"] is None else str(row["version"]),
+            cvss_observed_at_utc=_parse_datetime(
+                row["observed_at_utc"], "observed_at_utc"
+            ),
+            cvss_source_name=str(row["cvss_source_name"]),
+            epss_probability=float(row["score"]),
+            epss_percentile=None if row["percentile"] is None else float(row["percentile"]),
+            epss_score_date=_parse_date(row["score_date"], "score_date"),
+            epss_model_version=(
+                None if row["model_version"] is None else str(row["model_version"])
+            ),
+            epss_source_name=str(row["epss_source_name"]),
+            kev=bool(row["is_kev"]),
+            kev_date_added=_optional_date(row["kev_date_added"], "kev_date_added"),
+            kev_catalogue_date=_parse_date(row["kev_catalogue_date"], "kev_catalogue_date"),
+            known_ransomware_use=(
+                None
+                if row["known_ransomware_use"] is None
+                else str(row["known_ransomware_use"])
+            ),
+            diversevul=bool(row["is_diversevul"]),
+        )
+        if record.published_at_utc > cutoff or record.cvss_observed_at_utc > cutoff:
+            raise PublicCVEBindingError("Candidate pool contains future CVE or CVSS evidence")
+        if record.epss_score_date >= cutoff.date():
+            raise PublicCVEBindingError("Candidate pool contains same-day or future EPSS evidence")
+        if record.kev_catalogue_date > cutoff.date():
+            raise PublicCVEBindingError("Candidate pool contains future KEV evidence")
+        if record.kev_date_added is not None and record.kev_date_added > cutoff.date():
+            raise PublicCVEBindingError("Candidate pool contains a future KEV membership")
+        yield record
+
+
+def _select_records(
+    connection: sqlite3.Connection,
+    cutoff: datetime,
+    seed: int,
+    required_by_severity: Counter[str],
+) -> tuple[dict[str, list[PublicCVERecord]], Counter[str]]:
+    heaps: dict[str, list[tuple[int, str, PublicCVERecord]]] = {
+        severity: [] for severity in SEVERITIES
+    }
+    eligible_counts: Counter[str] = Counter()
+    for record in _iter_candidates(connection, cutoff):
+        severity = _severity(record.cvss)
+        eligible_counts[severity] += 1
+        limit = required_by_severity[severity]
+        if limit == 0:
+            continue
+        rank = _stable_rank(seed, record.cve_id)
+        entry = (-rank, record.cve_id, record)
+        if len(heaps[severity]) < limit:
+            heapq.heappush(heaps[severity], entry)
+        elif rank < -heaps[severity][0][0]:
+            heapq.heapreplace(heaps[severity], entry)
+    selected: dict[str, list[PublicCVERecord]] = {}
+    for severity in SEVERITIES:
+        required = required_by_severity[severity]
+        if len(heaps[severity]) != required:
+            raise PublicCVEBindingError(
+                f"Insufficient '{severity}' public CVEs: required {required}, "
+                f"eligible {eligible_counts[severity]}"
+            )
+        selected[severity] = sorted(
+            (entry[2] for entry in heaps[severity]),
+            key=lambda record: (record.cvss, record.cve_id),
+        )
+    return selected, eligible_counts
+
+
+def _binding_fingerprint(
+    source_fingerprint: str,
+    bindings: tuple[PublicCVEBinding, ...],
+    cutoff: datetime,
+    epss_as_of_date: date,
+) -> str:
+    payload = {
+        "source_dataset_fingerprint": source_fingerprint,
+        "earliest_finding_utc": cutoff.isoformat(),
+        "epss_policy": "latest_score_date_strictly_before_finding_date",
+        "epss_as_of_date": epss_as_of_date.isoformat(),
+        "bindings": [
+            {
+                "synthetic_cve_id": binding.synthetic_cve_id,
+                "asset_id": binding.asset_id,
+                "public_cve_id": binding.public.cve_id,
+                "cvss": binding.public.cvss,
+                "cvss_observed_at_utc": binding.public.cvss_observed_at_utc.isoformat(),
+                "epss": binding.public.epss_probability,
+                "epss_score_date": binding.public.epss_score_date.isoformat(),
+                "kev": binding.public.kev,
+                "kev_catalogue_date": binding.public.kev_catalogue_date.isoformat(),
+                "diversevul": binding.public.diversevul,
+            }
+            for binding in bindings
+        ],
+    }
+    canonical = json.dumps(payload, sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(canonical.encode()).hexdigest()
+
+
+def bind_public_cves(
+    dataset: Any,
+    scenario: ScenarioConfig,
+    database_path: str | Path,
+) -> PublicCVEBindingResult:
+    """Replace synthetic technical signals while preserving topology and operations."""
+
+    findings = tuple(dataset.findings)
+    if not findings:
+        raise PublicCVEBindingError("Synthetic dataset contains no findings")
+    if not isinstance(dataset.fingerprint, str) or not dataset.fingerprint:
+        raise PublicCVEBindingError("Synthetic dataset fingerprint is missing")
+    if not all(finding.cve_id.startswith("CVE-SYNTH-") for finding in findings):
+        raise PublicCVEBindingError("Input findings must use synthetic CVE fixture identifiers")
+    cutoff = min(finding.finding_created for finding in findings)
+    if cutoff.tzinfo is None or cutoff.utcoffset() is None:
+        raise PublicCVEBindingError("Finding timestamps must be timezone-aware")
+    cutoff = cutoff.astimezone(UTC)
+    representative_by_occurrence: dict[tuple[str, str], Finding] = {}
+    for finding in findings:
+        key = (finding.cve_id, finding.asset_id)
+        representative_by_occurrence.setdefault(key, finding)
+    representatives_by_severity: dict[str, list[tuple[tuple[str, str], Finding]]] = {
+        severity: [] for severity in SEVERITIES
+    }
+    for key, finding in representative_by_occurrence.items():
+        representatives_by_severity[_severity(float(finding.cvss))].append((key, finding))
+    required_by_severity: Counter[str] = Counter(
+        {
+            severity: len(representatives_by_severity[severity])
+            for severity in SEVERITIES
+        }
+    )
+    database = Path(database_path)
+    connection = _connect_read_only(database)
+    try:
+        _validate_schema(connection)
+        selected, eligible_counts = _select_records(
+            connection, cutoff, scenario.seed, required_by_severity
+        )
+    finally:
+        connection.close()
+    public_by_occurrence: dict[tuple[str, str], PublicCVERecord] = {}
+    for severity in SEVERITIES:
+        representatives = sorted(
+            representatives_by_severity[severity],
+            key=lambda item: (float(item[1].cvss), item[0]),
+        )
+        for representative, public in zip(
+            representatives, selected[severity], strict=True
+        ):
+            public_by_occurrence[representative[0]] = public
+    bindings = tuple(
+        PublicCVEBinding(
+            synthetic_cve_id=synthetic_cve_id,
+            asset_id=asset_id,
+            public=public_by_occurrence[(synthetic_cve_id, asset_id)],
+        )
+        for synthetic_cve_id, asset_id in representative_by_occurrence
+    )
+    if len({binding.public.cve_id for binding in bindings}) != len(bindings):
+        raise PublicCVEBindingError("Public CVEs were not selected without replacement")
+    bound_findings = []
+    for finding in findings:
+        public = public_by_occurrence[(finding.cve_id, finding.asset_id)]
+        epss_observed_at = datetime.combine(
+            public.epss_score_date, time.min, tzinfo=UTC
+        )
+        kev_observed_at = datetime.combine(
+            public.kev_catalogue_date, time.min, tzinfo=UTC
+        )
+        bound_findings.append(
+            replace(
+                finding,
+                cve_id=public.cve_id,
+                correlation_key=f"{public.cve_id}|{finding.asset_id}",
+                cvss=public.cvss,
+                epss_probability=public.epss_probability,
+                epss_observed_at=epss_observed_at,
+                kev=public.kev,
+                kev_observed_at=kev_observed_at,
+            )
+        )
+    bound_tuple = tuple(bound_findings)
+    if any(finding.cve_id.startswith("CVE-SYNTH-") for finding in bound_tuple):
+        raise PublicCVEBindingError("Synthetic CVE identifiers remain after public binding")
+    bound_grain = {(finding.cve_id, finding.asset_id) for finding in bound_tuple}
+    if len(bound_grain) != len(bindings):
+        raise PublicCVEBindingError("Public binding changed the vulnerability-occurrence grain")
+    epss_dates = {binding.public.epss_score_date for binding in bindings}
+    if len(epss_dates) != 1:
+        raise PublicCVEBindingError("Public binding did not use one reproducible EPSS panel")
+    epss_as_of_date = next(iter(epss_dates))
+    fingerprint = _binding_fingerprint(
+        dataset.fingerprint, bindings, cutoff, epss_as_of_date
+    )
+    return PublicCVEBindingResult(
+        findings=bound_tuple,
+        bindings=bindings,
+        source_dataset_fingerprint=dataset.fingerprint,
+        binding_fingerprint=fingerprint,
+        database_name=database.name,
+        earliest_finding_utc=cutoff,
+        epss_as_of_date=epss_as_of_date,
+        eligible_pool_counts=tuple(
+            (severity, eligible_counts[severity]) for severity in SEVERITIES
+        ),
+    )
