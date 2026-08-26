@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import ipaddress
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -113,7 +114,7 @@ class CMDBuildSettings:
 
 
 class CMDBuildClient:
-    """Read-only metadata client with authenticated session lifecycle management."""
+    """Authenticated REST client with explicit metadata and business operations."""
 
     def __init__(
         self,
@@ -295,3 +296,85 @@ class CMDBuildClient:
         if isinstance(data, dict):
             return [data]
         return self._require_list(data, "process start activities")
+
+    @staticmethod
+    def _require_identifier(data: Any, resource: str) -> int:
+        candidate = data.get("_id") if isinstance(data, dict) else data
+        if isinstance(candidate, str) and candidate.isdecimal():
+            candidate = int(candidate)
+        if isinstance(candidate, bool) or not isinstance(candidate, int) or candidate <= 0:
+            raise CMDBuildResponseError(
+                f"CMDBuild {resource} response has an invalid numeric identifier"
+            )
+        return candidate
+
+    def cards(self, class_id: str) -> list[dict[str, Any]]:
+        """Return all cards required by the bounded synthetic population."""
+
+        data = self._request(
+            "GET",
+            f"/classes/{self._segment(class_id)}/cards",
+            params={"detailed": "true", "limit": 100000},
+        )
+        return self._require_list(data, "cards")
+
+    def domain_relations(self, domain_id: str) -> list[dict[str, Any]]:
+        """Return all relations for one configured domain."""
+
+        data = self._request(
+            "GET",
+            f"/domains/{self._segment(domain_id)}/relations",
+            params={"detailed": "true", "limit": 100000},
+        )
+        return self._require_list(data, "domain relations")
+
+    def create_card(self, class_id: str, attributes: Mapping[str, Any]) -> int:
+        """Create one card and return its installation-specific identifier."""
+
+        data = self._request(
+            "POST",
+            f"/classes/{self._segment(class_id)}/cards",
+            json=dict(attributes),
+        )
+        return self._require_identifier(data, "card creation")
+
+    def delete_card(self, class_id: str, card_id: int) -> None:
+        """Delete one card, used only by bounded rollback."""
+
+        self._request(
+            "DELETE",
+            f"/classes/{self._segment(class_id)}/cards/{card_id}",
+            allow_empty=True,
+        )
+
+    def create_relation(
+        self,
+        domain_id: str,
+        source_type: str,
+        source_id: int,
+        destination_type: str,
+        destination_id: int,
+    ) -> int:
+        """Create one relation using the physical domain direction."""
+
+        data = self._request(
+            "POST",
+            f"/domains/{self._segment(domain_id)}/relations",
+            json={
+                "_type": domain_id,
+                "_sourceType": source_type,
+                "_sourceId": source_id,
+                "_destinationType": destination_type,
+                "_destinationId": destination_id,
+            },
+        )
+        return self._require_identifier(data, "relation creation")
+
+    def delete_relation(self, domain_id: str, relation_id: int) -> None:
+        """Delete one relation, used only by bounded rollback."""
+
+        self._request(
+            "DELETE",
+            f"/domains/{self._segment(domain_id)}/relations/{relation_id}",
+            allow_empty=True,
+        )

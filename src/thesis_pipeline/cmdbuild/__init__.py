@@ -9,6 +9,13 @@ from thesis_pipeline.cmdbuild.business_payloads import (
     LookupReference,
     build_business_payload_plan,
 )
+from thesis_pipeline.cmdbuild.business_writer import (
+    BusinessIngestionError,
+    BusinessIngestionPreview,
+    BusinessIngestionResult,
+    execute_business_ingestion,
+    prepare_business_ingestion,
+)
 from thesis_pipeline.cmdbuild.client import (
     CMDBuildAuthenticationError,
     CMDBuildClient,
@@ -26,6 +33,9 @@ from thesis_pipeline.cmdbuild.public_cve import (
 
 __all__ = [
     "BusinessCardPayload",
+    "BusinessIngestionError",
+    "BusinessIngestionPreview",
+    "BusinessIngestionResult",
     "BusinessPayloadError",
     "BusinessPayloadPlan",
     "BusinessRelationPayload",
@@ -42,4 +52,6 @@ __all__ = [
     "PublicCVERecord",
     "bind_public_cves",
     "build_business_payload_plan",
+    "execute_business_ingestion",
+    "prepare_business_ingestion",
 ]
