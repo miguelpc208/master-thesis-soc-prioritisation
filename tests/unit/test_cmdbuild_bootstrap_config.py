@@ -3,6 +3,7 @@ from datetime import timedelta
 from pathlib import Path
 
 from thesis_pipeline.config import load_scenario
+from thesis_pipeline.synthetic_org.generator import generate_dataset
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
 
@@ -161,7 +162,16 @@ def test_smoke_population_reuses_existing_experimental_scenario() -> None:
     assert population["business_services"] == scenario.services
     assert population["applications"] == scenario.assets
     assert population["servers"] == scenario.assets
-    assert population["vulnerability_occurrences"] == scenario.findings
+    dataset = generate_dataset(scenario)
+    occurrence_keys = {
+        (finding.cve_id, finding.asset_id)
+        for finding in dataset.findings
+    }
+    assert population["raw_findings"] == scenario.findings
+    assert population["vulnerability_occurrences"] == len(occurrence_keys)
+    assert population["duplicate_findings"] == (
+        scenario.findings - len(occurrence_keys)
+    )
     assert population["slas"] == (
         len(scenario.sla_hours) * len(mapping["lookups"]["sla_object"]["codes"])
     )
@@ -192,3 +202,33 @@ def test_smoke_generation_strategies_preserve_native_cmdbuild_constraints() -> N
         "high": "3",
         "critical": "4",
     }
+
+
+def test_smoke_backlog_requires_public_cve_binding_before_cmdbuild() -> None:
+    config = load_configuration("simulation.json")
+    scenario = load_scenario(REPOSITORY_ROOT / config["simulation"]["scenario_path"])
+    dataset = generate_dataset(scenario)
+    findings = list(dataset.findings)
+    generation = config["generation"]
+
+    expected_batch_start = scenario.start_time_utc - timedelta(
+        minutes=(scenario.findings * scenario.arrival_interval_minutes) + 10
+    )
+    expected_last_finding = expected_batch_start + timedelta(
+        minutes=(scenario.findings - 1) * scenario.arrival_interval_minutes
+    )
+
+    assert min(finding.finding_created for finding in findings) == expected_batch_start
+    assert max(finding.finding_created for finding in findings) == expected_last_finding
+    assert all(finding.finding_created < scenario.start_time_utc for finding in findings)
+    assert all(finding.cve_id.startswith("CVE-SYNTH-") for finding in findings)
+    assert (
+        generation["finding_timeline_strategy"]
+        == "preloaded_backlog_before_operational_horizon"
+    )
+    assert generation["occurrence_grain"] == "cve_id_and_asset_id"
+    assert (
+        generation["cve_binding_strategy"]
+        == "replace_synthetic_identifiers_from_public_dataset"
+    )
+    assert generation["allow_synthetic_cve_ids_in_cmdbuild"] is False

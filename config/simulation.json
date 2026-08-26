@@ -1,5 +1,5 @@
 {
-  "schema_version": "1.1",
+  "schema_version": "1.2",
   "simulation": {
     "scenario_id": "smoke",
     "scenario_path": "configs/scenarios/smoke.yaml",
@@ -14,7 +14,9 @@
     "business_services": 10,
     "applications": 100,
     "servers": 100,
-    "vulnerability_occurrences": 240
+    "raw_findings": 240,
+    "vulnerability_occurrences": 201,
+    "duplicate_findings": 39
   },
   "time_model": {
     "timezone": "UTC",
@@ -37,6 +39,10 @@
       "medium": "medium",
       "high": "high",
       "critical": "critical"
-    }
+    },
+    "finding_timeline_strategy": "preloaded_backlog_before_operational_horizon",
+    "occurrence_grain": "cve_id_and_asset_id",
+    "cve_binding_strategy": "replace_synthetic_identifiers_from_public_dataset",
+    "allow_synthetic_cve_ids_in_cmdbuild": false
   }
 }
