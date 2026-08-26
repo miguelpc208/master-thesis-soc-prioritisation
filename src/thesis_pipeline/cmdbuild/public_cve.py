@@ -68,6 +68,11 @@ class PublicCVEBindingResult:
     earliest_finding_utc: datetime
     epss_as_of_date: date
     eligible_pool_counts: tuple[tuple[str, int], ...]
+    eligible_kev_pool_counts: tuple[tuple[str, int], ...]
+    selection_mode: str
+    minimum_kev: int
+    selected_kev_count: int
+    coverage_replacements: int
 
 
 def _parse_datetime(value: Any, field_name: str) -> datetime:
@@ -114,6 +119,22 @@ def _severity(score: float) -> str:
 def _stable_rank(seed: int, cve_id: str) -> int:
     digest = hashlib.sha256(f"{seed}|{cve_id}".encode()).digest()
     return int.from_bytes(digest, byteorder="big", signed=False)
+
+
+def _offer_ranked_record(
+    heap: list[tuple[int, str, PublicCVERecord]],
+    record: PublicCVERecord,
+    seed: int,
+    limit: int,
+) -> None:
+    if limit == 0:
+        return
+    rank = _stable_rank(seed, record.cve_id)
+    entry = (-rank, record.cve_id, record)
+    if len(heap) < limit:
+        heapq.heappush(heap, entry)
+    elif rank < -heap[0][0]:
+        heapq.heapreplace(heap, entry)
 
 
 def _connect_read_only(database_path: Path) -> sqlite3.Connection:
@@ -346,23 +367,36 @@ def _select_records(
     cutoff: datetime,
     seed: int,
     required_by_severity: Counter[str],
-) -> tuple[dict[str, list[PublicCVERecord]], Counter[str]]:
+    minimum_kev: int,
+) -> tuple[
+    dict[str, list[PublicCVERecord]],
+    Counter[str],
+    Counter[str],
+    int,
+]:
     heaps: dict[str, list[tuple[int, str, PublicCVERecord]]] = {
         severity: [] for severity in SEVERITIES
     }
+    kev_heaps: dict[str, list[tuple[int, str, PublicCVERecord]]] = {
+        severity: [] for severity in SEVERITIES
+    }
     eligible_counts: Counter[str] = Counter()
+    eligible_kev_counts: Counter[str] = Counter()
     for record in _iter_candidates(connection, cutoff):
         severity = _severity(record.cvss)
         eligible_counts[severity] += 1
         limit = required_by_severity[severity]
         if limit == 0:
             continue
-        rank = _stable_rank(seed, record.cve_id)
-        entry = (-rank, record.cve_id, record)
-        if len(heaps[severity]) < limit:
-            heapq.heappush(heaps[severity], entry)
-        elif rank < -heaps[severity][0][0]:
-            heapq.heapreplace(heaps[severity], entry)
+        _offer_ranked_record(heaps[severity], record, seed, limit)
+        if record.kev:
+            eligible_kev_counts[severity] += 1
+            _offer_ranked_record(
+                kev_heaps[severity],
+                record,
+                seed,
+                min(limit, minimum_kev),
+            )
     selected: dict[str, list[PublicCVERecord]] = {}
     for severity in SEVERITIES:
         required = required_by_severity[severity]
@@ -375,7 +409,50 @@ def _select_records(
             (entry[2] for entry in heaps[severity]),
             key=lambda record: (record.cvss, record.cve_id),
         )
-    return selected, eligible_counts
+    selected_ids = {
+        record.cve_id
+        for records in selected.values()
+        for record in records
+    }
+    selected_kev_count = sum(
+        record.kev for records in selected.values() for record in records
+    )
+    coverage_replacements = 0
+    if selected_kev_count < minimum_kev:
+        candidates = sorted(
+            (
+                entry[2]
+                for severity in SEVERITIES
+                for entry in kev_heaps[severity]
+                if entry[2].cve_id not in selected_ids
+            ),
+            key=lambda record: (_stable_rank(seed, record.cve_id), record.cve_id),
+        )
+        for candidate in candidates:
+            if selected_kev_count >= minimum_kev:
+                break
+            severity = _severity(candidate.cvss)
+            replaceable = [record for record in selected[severity] if not record.kev]
+            if not replaceable:
+                continue
+            evicted = max(
+                replaceable,
+                key=lambda record: (_stable_rank(seed, record.cve_id), record.cve_id),
+            )
+            selected[severity].remove(evicted)
+            selected[severity].append(candidate)
+            selected_ids.remove(evicted.cve_id)
+            selected_ids.add(candidate.cve_id)
+            selected_kev_count += 1
+            coverage_replacements += 1
+    if selected_kev_count < minimum_kev:
+        raise PublicCVEBindingError(
+            f"Insufficient eligible KEV coverage: required {minimum_kev}, "
+            f"selected {selected_kev_count}, eligible {sum(eligible_kev_counts.values())}"
+        )
+    for severity in SEVERITIES:
+        selected[severity].sort(key=lambda record: (record.cvss, record.cve_id))
+    return selected, eligible_counts, eligible_kev_counts, coverage_replacements
 
 
 def _binding_fingerprint(
@@ -383,12 +460,17 @@ def _binding_fingerprint(
     bindings: tuple[PublicCVEBinding, ...],
     cutoff: datetime,
     epss_as_of_date: date,
+    minimum_kev: int,
+    coverage_replacements: int,
 ) -> str:
     payload = {
         "source_dataset_fingerprint": source_fingerprint,
         "earliest_finding_utc": cutoff.isoformat(),
         "epss_policy": "latest_score_date_strictly_before_finding_date",
         "epss_as_of_date": epss_as_of_date.isoformat(),
+        "selection_mode": "minimum_kev_coverage" if minimum_kev else "natural",
+        "minimum_kev": minimum_kev,
+        "coverage_replacements": coverage_replacements,
         "bindings": [
             {
                 "synthetic_cve_id": binding.synthetic_cve_id,
@@ -413,8 +495,10 @@ def bind_public_cves(
     dataset: Any,
     scenario: ScenarioConfig,
     database_path: str | Path,
+    *,
+    minimum_kev: int = 0,
 ) -> PublicCVEBindingResult:
-    """Replace synthetic technical signals while preserving topology and operations."""
+    """Replace synthetic signals, optionally enforcing explicit KEV coverage."""
 
     findings = tuple(dataset.findings)
     if not findings:
@@ -442,12 +526,25 @@ def bind_public_cves(
             for severity in SEVERITIES
         }
     )
+    occurrence_count = sum(required_by_severity.values())
+    if isinstance(minimum_kev, bool) or not isinstance(minimum_kev, int):
+        raise PublicCVEBindingError("minimum_kev must be an integer")
+    if minimum_kev < 0 or minimum_kev > occurrence_count:
+        raise PublicCVEBindingError(
+            f"minimum_kev must be between 0 and {occurrence_count}"
+        )
     database = Path(database_path)
     connection = _connect_read_only(database)
     try:
         _validate_schema(connection)
-        selected, eligible_counts = _select_records(
-            connection, cutoff, scenario.seed, required_by_severity
+        selected, eligible_counts, eligible_kev_counts, coverage_replacements = (
+            _select_records(
+                connection,
+                cutoff,
+                scenario.seed,
+                required_by_severity,
+                minimum_kev,
+            )
         )
     finally:
         connection.close()
@@ -502,8 +599,16 @@ def bind_public_cves(
     if len(epss_dates) != 1:
         raise PublicCVEBindingError("Public binding did not use one reproducible EPSS panel")
     epss_as_of_date = next(iter(epss_dates))
+    selected_kev_count = sum(binding.public.kev for binding in bindings)
+    if selected_kev_count < minimum_kev:
+        raise PublicCVEBindingError("Public binding did not satisfy minimum KEV coverage")
     fingerprint = _binding_fingerprint(
-        dataset.fingerprint, bindings, cutoff, epss_as_of_date
+        dataset.fingerprint,
+        bindings,
+        cutoff,
+        epss_as_of_date,
+        minimum_kev,
+        coverage_replacements,
     )
     return PublicCVEBindingResult(
         findings=bound_tuple,
@@ -516,4 +621,11 @@ def bind_public_cves(
         eligible_pool_counts=tuple(
             (severity, eligible_counts[severity]) for severity in SEVERITIES
         ),
+        eligible_kev_pool_counts=tuple(
+            (severity, eligible_kev_counts[severity]) for severity in SEVERITIES
+        ),
+        selection_mode="minimum_kev_coverage" if minimum_kev else "natural",
+        minimum_kev=minimum_kev,
+        selected_kev_count=selected_kev_count,
+        coverage_replacements=coverage_replacements,
     )

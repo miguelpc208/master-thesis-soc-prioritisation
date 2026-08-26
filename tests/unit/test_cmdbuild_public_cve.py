@@ -161,6 +161,12 @@ def test_public_binding_is_deterministic_and_preserves_occurrence_grain(
     assert len(first.findings) == scenario.findings
     assert len(first.bindings) == 201
     assert len({binding.public.cve_id for binding in first.bindings}) == 201
+    assert first.selection_mode == "natural"
+    assert first.minimum_kev == 0
+    assert first.coverage_replacements == 0
+    assert first.selected_kev_count == sum(
+        binding.public.kev for binding in first.bindings
+    )
     assert all(not finding.cve_id.startswith("CVE-SYNTH-") for finding in first.findings)
     assert all(
         binding.public.published_at_utc <= first.earliest_finding_utc
@@ -226,6 +232,75 @@ def test_public_binding_is_deterministic_and_preserves_occurrence_grain(
         assert connection.execute("SELECT COUNT(*) FROM cve").fetchone()[0] == 401
     finally:
         connection.close()
+
+
+def test_smoke_coverage_enforces_four_kev_without_changing_severity(
+    tmp_path: Path,
+) -> None:
+    database_path = tmp_path / "vulzoo-ingestion.sqlite"
+    _create_database(database_path)
+    scenario = load_scenario(ROOT / "configs/scenarios/smoke.yaml")
+    dataset = generate_dataset(scenario)
+
+    natural = bind_public_cves(dataset, scenario, database_path)
+    covered = bind_public_cves(dataset, scenario, database_path, minimum_kev=4)
+    repeated = bind_public_cves(dataset, scenario, database_path, minimum_kev=4)
+
+    assert covered.selection_mode == "minimum_kev_coverage"
+    assert covered.minimum_kev == 4
+    assert covered.selected_kev_count >= 4
+    assert covered.selected_kev_count == sum(
+        binding.public.kev for binding in covered.bindings
+    )
+    assert covered.binding_fingerprint == repeated.binding_fingerprint
+    assert covered.findings == repeated.findings
+    assert len(covered.findings) == len(natural.findings) == 240
+    assert len(covered.bindings) == len(natural.bindings) == 201
+    assert len({binding.public.cve_id for binding in covered.bindings}) == 201
+
+    source_severities = Counter(
+        "critical"
+        if finding.cvss >= 9.0
+        else "high"
+        if finding.cvss >= 7.0
+        else "medium"
+        if finding.cvss >= 4.0
+        else "low"
+        for finding in dataset.findings
+    )
+    covered_severities = Counter(
+        "critical"
+        if finding.cvss >= 9.0
+        else "high"
+        if finding.cvss >= 7.0
+        else "medium"
+        if finding.cvss >= 4.0
+        else "low"
+        for finding in covered.findings
+    )
+    assert covered_severities == source_severities
+
+
+def test_public_binding_rejects_invalid_minimum_kev(tmp_path: Path) -> None:
+    database_path = tmp_path / "vulzoo-ingestion.sqlite"
+    _create_database(database_path)
+    scenario = load_scenario(ROOT / "configs/scenarios/smoke.yaml")
+    dataset = generate_dataset(scenario)
+
+    with pytest.raises(PublicCVEBindingError, match="between"):
+        bind_public_cves(dataset, scenario, database_path, minimum_kev=202)
+
+
+def test_public_binding_rejects_insufficient_eligible_kev_pool(
+    tmp_path: Path,
+) -> None:
+    database_path = tmp_path / "vulzoo-ingestion.sqlite"
+    _create_database(database_path)
+    scenario = load_scenario(ROOT / "configs/scenarios/smoke.yaml")
+    dataset = generate_dataset(scenario)
+
+    with pytest.raises(PublicCVEBindingError, match="Insufficient eligible KEV"):
+        bind_public_cves(dataset, scenario, database_path, minimum_kev=21)
 
 
 def test_public_binding_rejects_an_insufficient_severity_pool(tmp_path: Path) -> None:
