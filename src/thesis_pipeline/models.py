@@ -115,14 +115,20 @@ class WorkflowRecord:
     triage_started: datetime
     triage_completed: datetime
     decision: datetime
-    remediation_started: datetime
-    remediation_completed: datetime
+    remediation_started: datetime | None
+    remediation_completed: datetime | None
     sla_deadline: datetime
     analyst_id: str
-    remediator_id: str
+    remediator_id: str | None
+
+    @property
+    def closed_at(self) -> datetime:
+        """Close non-actionable cases at decision and actionable cases at remediation."""
+
+        return self.remediation_completed or self.decision
 
     def lifecycle(self) -> tuple[datetime, ...]:
-        return (
+        base = (
             self.finding_created,
             self.alert_created,
             self.correlated,
@@ -130,6 +136,16 @@ class WorkflowRecord:
             self.triage_started,
             self.triage_completed,
             self.decision,
+        )
+        if (self.remediation_started is None) != (
+            self.remediation_completed is None
+        ):
+            raise RuntimeError(
+                "Remediation timestamps must either both be present or both be absent"
+            )
+        if self.remediation_started is None:
+            return base
+        return base + (
             self.remediation_started,
             self.remediation_completed,
         )
