@@ -283,6 +283,30 @@
       }
     }
   },
+  "operational_support": {
+    "requester": {
+      "class_id": "Employee",
+      "identity_attribute": "Code",
+      "identity_value": "SOC-AUTOMATION",
+      "number_attribute": "Number",
+      "number": "SOC-AUTOMATION"
+    },
+    "area": {
+      "class_id": "ITProcArea",
+      "identity_attribute": "Description",
+      "identity_value": "Synthetic SOC Operations",
+      "role_attribute": "Role"
+    },
+    "role": {
+      "class_id": "Role",
+      "identity_attribute": "Code",
+      "identity_value": "SuperUser"
+    },
+    "channel": {
+      "lookup_type": "ITProc - Channel",
+      "code": "Monitoring"
+    }
+  },
   "integration": {
     "technical_vulnerability_key": "cve_id",
     "asset_key": "asset_id",

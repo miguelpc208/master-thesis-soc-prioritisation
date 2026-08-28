@@ -328,6 +328,20 @@ class CMDBuildClient:
         )
         return self._require_list(data, "domain relations")
 
+    def process_instances(self, process_id: str) -> list[dict[str, Any]]:
+        """Return all instances required by the bounded operational population."""
+
+        data = self._request(
+            "GET",
+            f"/processes/{self._segment(process_id)}/instances",
+            params={
+                "detailed": "true",
+                "include_tasklist": "true",
+                "limit": 100000,
+            },
+        )
+        return self._require_list(data, "process instances")
+
     def create_card(self, class_id: str, attributes: Mapping[str, Any]) -> int:
         """Create one card and return its installation-specific identifier."""
 
@@ -344,6 +358,35 @@ class CMDBuildClient:
         self._request(
             "DELETE",
             f"/classes/{self._segment(class_id)}/cards/{card_id}",
+            allow_empty=True,
+        )
+
+    def create_process_instance(
+        self,
+        process_id: str,
+        activity_id: str,
+        attributes: Mapping[str, Any],
+        *,
+        advance: bool,
+    ) -> int:
+        """Create one process instance at an explicitly verified start activity."""
+
+        payload = dict(attributes)
+        payload["_activity"] = activity_id
+        payload["_advance"] = advance
+        data = self._request(
+            "POST",
+            f"/processes/{self._segment(process_id)}/instances",
+            json=payload,
+        )
+        return self._require_identifier(data, "process instance creation")
+
+    def delete_process_instance(self, process_id: str, instance_id: int) -> None:
+        """Delete one process instance, used only by bounded rollback."""
+
+        self._request(
+            "DELETE",
+            f"/processes/{self._segment(process_id)}/instances/{instance_id}",
             allow_empty=True,
         )
 

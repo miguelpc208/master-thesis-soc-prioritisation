@@ -24,6 +24,18 @@ from thesis_pipeline.cmdbuild.client import (
     CMDBuildResponseError,
     CMDBuildSettings,
 )
+from thesis_pipeline.cmdbuild.operational_payloads import (
+    OperationalPayloadError,
+    OperationalPayloadPlan,
+    build_operational_payload_plan,
+)
+from thesis_pipeline.cmdbuild.operational_writer import (
+    OperationalIngestionError,
+    OperationalIngestionPreview,
+    OperationalIngestionResult,
+    execute_operational_ingestion,
+    prepare_operational_ingestion,
+)
 from thesis_pipeline.cmdbuild.public_cve import (
     PublicCVEBindingError,
     PublicCVEBindingResult,
@@ -47,11 +59,19 @@ __all__ = [
     "CMDBuildSettings",
     "CardReference",
     "LookupReference",
+    "OperationalIngestionError",
+    "OperationalIngestionPreview",
+    "OperationalIngestionResult",
+    "OperationalPayloadError",
+    "OperationalPayloadPlan",
     "PublicCVEBindingError",
     "PublicCVEBindingResult",
     "PublicCVERecord",
     "bind_public_cves",
     "build_business_payload_plan",
+    "build_operational_payload_plan",
     "execute_business_ingestion",
+    "execute_operational_ingestion",
+    "prepare_operational_ingestion",
     "prepare_business_ingestion",
 ]
