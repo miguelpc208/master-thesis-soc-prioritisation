@@ -284,13 +284,6 @@
     }
   },
   "operational_support": {
-    "requester": {
-      "class_id": "Employee",
-      "identity_attribute": "Code",
-      "identity_value": "SOC-AUTOMATION",
-      "number_attribute": "Number",
-      "number": "SOC-AUTOMATION"
-    },
     "area": {
       "class_id": "ITProcArea",
       "identity_attribute": "Description",

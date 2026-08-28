@@ -15,7 +15,7 @@ from thesis_pipeline.simulation.workflow import SimulationResult
 
 PROCESS_ORDER = ("incident", "change")
 RELATION_ORDER = ("incident_asset", "change_asset")
-SUPPORT_ORDER = ("requester", "area")
+SUPPORT_ORDER = ("area",)
 
 
 class OperationalPayloadError(RuntimeError):
@@ -280,18 +280,8 @@ def _fingerprint(
 
 
 def _support_cards(mapping: Mapping[str, Any]) -> tuple[OperationalSupportCardPayload, ...]:
-    requester = _support(mapping, "requester")
     area = _support(mapping, "area")
     role = _support(mapping, "role")
-
-    requester_class = _required_string(requester.get("class_id"), "requester.class_id")
-    requester_identity = _required_string(
-        requester.get("identity_attribute"), "requester.identity_attribute"
-    )
-    requester_value = _required_string(
-        requester.get("identity_value"), "requester.identity_value"
-    )
-    requester_number = _required_string(requester.get("number"), "requester.number")
 
     area_class = _required_string(area.get("class_id"), "area.class_id")
     area_identity = _required_string(area.get("identity_attribute"), "area.identity_attribute")
@@ -307,22 +297,6 @@ def _support_cards(mapping: Mapping[str, Any]) -> tuple[OperationalSupportCardPa
     )
 
     return (
-        OperationalSupportCardPayload(
-            key="requester:SOC-AUTOMATION",
-            class_id=requester_class,
-            identity_attribute=requester_identity,
-            identity_value=requester_value,
-            attributes=(
-                (requester_identity, requester_value),
-                (
-                    _required_string(
-                        requester.get("number_attribute"),
-                        "requester.number_attribute",
-                    ),
-                    requester_number,
-                ),
-            ),
-        ),
         OperationalSupportCardPayload(
             key="area:Synthetic SOC Operations",
             class_id=area_class,
@@ -359,8 +333,7 @@ def build_operational_payload_plan(
         raise OperationalPayloadError("Workflow records do not have unique occurrence keys")
 
     support_cards = _support_cards(mapping)
-    requester_reference = SupportReference(support_cards[0].key)
-    area_reference = SupportReference(support_cards[1].key)
+    area_reference = SupportReference(support_cards[0].key)
     channel = _support(mapping, "channel")
     channel_reference = LookupReference(
         family="process_channel",
@@ -397,7 +370,6 @@ def build_operational_payload_plan(
                 attributes=(
                     (_field(mapping, "incident", "code"), incident_code),
                     (_field(mapping, "incident", "description"), short_description),
-                    ("Requester", requester_reference),
                     ("ShortDescr", short_description),
                     ("AreaRef", area_reference),
                     (
@@ -445,7 +417,6 @@ def build_operational_payload_plan(
                 attributes=(
                     (_field(mapping, "change", "code"), change_code),
                     (_field(mapping, "change", "description"), short_description),
-                    ("Requester", requester_reference),
                     ("Channel", channel_reference),
                     ("ShortDescr", short_description),
                     (

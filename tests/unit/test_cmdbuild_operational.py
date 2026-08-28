@@ -220,35 +220,32 @@ class FakeOperationalClient:
 def test_smoke_plan_has_explicit_support_process_and_relation_counts() -> None:
     plan = _plan(count=201, actionable=55)
 
-    assert dict(plan.support_counts) == {"requester": 1, "area": 1}
+    assert dict(plan.support_counts) == {"area": 1}
     assert dict(plan.process_counts) == {"incident": 201, "change": 55}
     assert dict(plan.relation_counts) == {
         "incident_asset": 201,
         "change_asset": 55,
     }
-    assert len(plan.support_cards) == 2
+    assert len(plan.support_cards) == 1
     assert len(plan.processes) == 256
     assert len(plan.relations) == 256
     assert len(plan.fingerprint) == 64
     assert plan.fingerprint == _plan(count=201, actionable=55).fingerprint
 
 
-def test_mapping_uses_portable_workflow_opening_dependencies() -> None:
+def test_mapping_uses_monitoring_native_workflow_dependencies() -> None:
     support = _mapping()["operational_support"]
 
-    assert support["requester"] == {
-        "class_id": "Employee",
-        "identity_attribute": "Code",
-        "identity_value": "SOC-AUTOMATION",
-        "number_attribute": "Number",
-        "number": "SOC-AUTOMATION",
-    }
+    assert "requester" not in support
     assert support["area"]["identity_value"] == "Synthetic SOC Operations"
     assert support["role"]["identity_value"] == "SuperUser"
     assert support["channel"] == {
         "lookup_type": "ITProc - Channel",
         "code": "Monitoring",
     }
+
+    plan = _plan()
+    assert all("Requester" not in dict(process.attributes) for process in plan.processes)
 
 
 def test_change_uses_parent_reference_without_duplicate_generated_relation() -> None:
@@ -280,14 +277,14 @@ def test_execution_is_idempotent_and_never_advances_native_workflows() -> None:
         expected_fingerprint=plan.fingerprint,
     )
 
-    assert len(first.created_support_cards) == 2
+    assert len(first.created_support_cards) == 1
     assert len(first.created_processes) == 3
     assert len(first.created_relations) == 3
     assert second.created_support_cards == ()
     assert second.created_processes == ()
     assert second.created_relations == ()
     assert len(client.mutations) == mutation_count
-    assert dict(second.preview.support_operations) == {"create": 0, "reuse": 2}
+    assert dict(second.preview.support_operations) == {"create": 0, "reuse": 1}
     assert dict(second.preview.process_operations) == {"create": 0, "reuse": 3}
     assert dict(second.preview.relation_operations) == {"create": 0, "reuse": 3}
     assert all(
@@ -313,7 +310,6 @@ def test_failure_rolls_back_only_objects_created_by_the_current_run() -> None:
     else:
         raise AssertionError("The injected failure was not raised")
 
-    assert client.card_rows["Employee"] == []
     assert client.card_rows["ITProcArea"] == []
     assert client.process_rows["IncidentMgt"] == []
     assert client.process_rows["ChangeMgt"] == []
@@ -392,7 +388,7 @@ def test_preview_performs_no_mutations() -> None:
 
     preview = prepare_operational_ingestion(client, plan)
 
-    assert dict(preview.support_operations) == {"create": 2, "reuse": 0}
+    assert dict(preview.support_operations) == {"create": 1, "reuse": 0}
     assert dict(preview.process_operations) == {"create": 3, "reuse": 0}
     assert dict(preview.relation_operations) == {"create": 3, "reuse": 0}
     assert client.mutations == []
