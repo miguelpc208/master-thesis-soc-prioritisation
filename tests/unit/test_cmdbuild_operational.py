@@ -2,16 +2,18 @@ from __future__ import annotations
 
 import json
 from collections import defaultdict
+from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
 from thesis_pipeline.cmdbuild.client import CMDBuildClient, CMDBuildSettings
 from thesis_pipeline.cmdbuild.operational_payloads import (
-    ProcessReference,
     build_operational_payload_plan,
 )
 from thesis_pipeline.cmdbuild.operational_writer import (
+    OperationalIngestionError,
+    OperationalPartialCommitError,
     execute_operational_ingestion,
     prepare_operational_ingestion,
 )
@@ -141,6 +143,34 @@ class FakeOperationalClient:
         activity = "IM02-HDOpening" if process_id == "IncidentMgt" else "CM01-Opening"
         return [{"_id": activity}]
 
+    def process_activity_definition(
+        self,
+        process_id: str,
+        activity_id: str,
+    ) -> dict[str, Any]:
+        expected = "IM02-HDOpening" if process_id == "IncidentMgt" else "CM01-Opening"
+        assert activity_id == expected
+        names = (
+            ("Requester", "ShortDescr", "AreaRef", "Channel")
+            if process_id == "IncidentMgt"
+            else ("Requester", "Channel", "ShortDescr")
+        )
+        return {
+            "attributes": [
+                {
+                    "_id": name,
+                    "writable": True,
+                    "mandatory": name
+                    in {
+                        "Requester",
+                        "ShortDescr",
+                        "AreaRef" if process_id == "IncidentMgt" else "Channel",
+                    },
+                }
+                for name in names
+            ]
+        }
+
     def domain_relations(self, domain_id: str) -> list[dict[str, Any]]:
         return list(self.relation_rows[domain_id])
 
@@ -176,13 +206,13 @@ class FakeOperationalClient:
         self.mutations.append(("create_process", process_id, identifier))
         return identifier
 
-    def delete_process_instance(self, process_id: str, instance_id: int) -> None:
+    def abort_process_instance(self, process_id: str, instance_id: int) -> None:
         self.process_rows[process_id] = [
             process
             for process in self.process_rows[process_id]
             if process.get("_id") != instance_id
         ]
-        self.mutations.append(("delete_process", process_id, instance_id))
+        self.mutations.append(("abort_process", process_id, instance_id))
 
     def create_relation(
         self,
@@ -225,10 +255,11 @@ def test_smoke_plan_has_explicit_support_process_and_relation_counts() -> None:
     assert dict(plan.relation_counts) == {
         "incident_asset": 201,
         "change_asset": 55,
+        "incident_change": 55,
     }
     assert len(plan.support_cards) == 1
     assert len(plan.processes) == 256
-    assert len(plan.relations) == 256
+    assert len(plan.relations) == 311
     assert len(plan.fingerprint) == 64
     assert plan.fingerprint == _plan(count=201, actionable=55).fingerprint
 
@@ -246,19 +277,50 @@ def test_mapping_uses_monitoring_native_workflow_dependencies() -> None:
 
     plan = _plan()
     assert all("Requester" not in dict(process.attributes) for process in plan.processes)
+    incidents = [process for process in plan.processes if process.entity == "incident"]
+    changes = [process for process in plan.processes if process.entity == "change"]
+    assert all(
+        tuple(dict(process.attributes)) == ("ShortDescr", "AreaRef", "Channel")
+        for process in incidents
+    )
+    assert all(
+        tuple(dict(process.attributes)) == ("Channel", "ShortDescr")
+        for process in changes
+    )
+    assert all(process.identity_value.startswith("INC2-") for process in incidents)
+    assert all(process.identity_value.startswith("CHG2-") for process in changes)
 
 
-def test_change_uses_parent_reference_without_duplicate_generated_relation() -> None:
+def test_change_uses_explicit_generated_parent_relation() -> None:
     plan = _plan()
-    change = next(process for process in plan.processes if process.entity == "change")
-    parent = dict(change.attributes)["ParentProcess"]
-
-    assert isinstance(parent, ProcessReference)
-    assert parent.key.startswith("incident:")
     assert {relation.domain for relation in plan.relations} == {
         "incident_asset",
         "change_asset",
+        "incident_change",
     }
+    parent = next(
+        relation for relation in plan.relations if relation.domain == "incident_change"
+    )
+    assert parent.source.kind == "process"
+    assert parent.source.key.startswith("incident:")
+    assert parent.destination.kind == "process"
+    assert parent.destination.key.startswith("change:")
+
+
+def test_preview_rejects_fields_outside_native_start_activity() -> None:
+    plan = _plan()
+    first = replace(
+        plan.processes[0],
+        attributes=(*plan.processes[0].attributes, ("Code", "discarded-by-workflow")),
+    )
+    invalid = replace(plan, processes=(first, *plan.processes[1:]))
+
+    try:
+        prepare_operational_ingestion(FakeOperationalClient(), invalid)
+    except OperationalIngestionError as exc:
+        assert "unsupported=['Code']" in str(exc)
+    else:
+        raise AssertionError("An unsupported start-activity field was accepted")
 
 
 def test_execution_is_idempotent_and_never_advances_native_workflows() -> None:
@@ -279,14 +341,14 @@ def test_execution_is_idempotent_and_never_advances_native_workflows() -> None:
 
     assert len(first.created_support_cards) == 1
     assert len(first.created_processes) == 3
-    assert len(first.created_relations) == 3
+    assert len(first.created_relations) == 4
     assert second.created_support_cards == ()
     assert second.created_processes == ()
     assert second.created_relations == ()
     assert len(client.mutations) == mutation_count
     assert dict(second.preview.support_operations) == {"create": 0, "reuse": 1}
     assert dict(second.preview.process_operations) == {"create": 0, "reuse": 3}
-    assert dict(second.preview.relation_operations) == {"create": 0, "reuse": 3}
+    assert dict(second.preview.relation_operations) == {"create": 0, "reuse": 4}
     assert all(
         process["_advance"] is False
         for rows in client.process_rows.values()
@@ -294,7 +356,7 @@ def test_execution_is_idempotent_and_never_advances_native_workflows() -> None:
     )
 
 
-def test_failure_rolls_back_only_objects_created_by_the_current_run() -> None:
+def test_failure_preserves_native_processes_for_idempotent_recovery() -> None:
     plan = _plan()
     client = FakeOperationalClient()
     client.fail_relation_at = 2
@@ -305,15 +367,33 @@ def test_failure_rolls_back_only_objects_created_by_the_current_run() -> None:
             plan,
             expected_fingerprint=plan.fingerprint,
         )
-    except RuntimeError as exc:
-        assert str(exc) == "injected relation failure"
+    except OperationalPartialCommitError as exc:
+        assert exc.support_cards_preserved == 1
+        assert exc.processes_preserved == 3
+        assert exc.relation_cleanup_failures == 0
     else:
         raise AssertionError("The injected failure was not raised")
 
-    assert client.card_rows["ITProcArea"] == []
-    assert client.process_rows["IncidentMgt"] == []
-    assert client.process_rows["ChangeMgt"] == []
+    assert len(client.card_rows["ITProcArea"]) == 1
+    assert len(client.process_rows["IncidentMgt"]) == 2
+    assert len(client.process_rows["ChangeMgt"]) == 1
     assert client.relation_rows["ITProcCI"] == []
+    assert not any(
+        operation in {"delete_card", "abort_process"}
+        for operation, _type_id, _identifier in client.mutations
+    )
+
+    client.fail_relation_at = None
+    recovered = execute_operational_ingestion(
+        client,
+        plan,
+        expected_fingerprint=plan.fingerprint,
+    )
+
+    assert recovered.created_support_cards == ()
+    assert recovered.created_processes == ()
+    assert len(recovered.created_relations) == 4
+    assert dict(recovered.preview.relation_operations) == {"create": 4, "reuse": 0}
 
 
 class FakeResponse:
@@ -347,6 +427,17 @@ class FakeSession:
 def test_client_uses_documented_process_instance_payload_contract() -> None:
     session = FakeSession(
         [
+            FakeResponse(
+                {
+                    "attributes": [
+                        {
+                            "_id": "ShortDescr",
+                            "writable": True,
+                            "mandatory": True,
+                        }
+                    ]
+                }
+            ),
             FakeResponse([]),
             FakeResponse({"_id": 71}),
             FakeResponse(None, status_code=204, empty=True),
@@ -362,6 +453,18 @@ def test_client_uses_documented_process_instance_payload_contract() -> None:
     )
     client._token = "not-displayed"
 
+    assert client.process_activity_definition(
+        "IncidentMgt",
+        "IM02-HDOpening",
+    ) == {
+        "attributes": [
+            {
+                "_id": "ShortDescr",
+                "writable": True,
+                "mandatory": True,
+            }
+        ]
+    }
     assert client.process_instances("IncidentMgt") == []
     assert (
         client.create_process_instance(
@@ -372,10 +475,15 @@ def test_client_uses_documented_process_instance_payload_contract() -> None:
         )
         == 71
     )
-    client.delete_process_instance("IncidentMgt", 71)
+    client.abort_process_instance("IncidentMgt", 71)
 
-    assert [request[0] for request in session.requests] == ["GET", "POST", "DELETE"]
-    assert session.requests[1][2]["json"] == {
+    assert [request[0] for request in session.requests] == [
+        "GET",
+        "GET",
+        "POST",
+        "DELETE",
+    ]
+    assert session.requests[2][2]["json"] == {
         "Code": "INC-001",
         "_activity": "IM02-HDOpening",
         "_advance": False,
@@ -390,5 +498,5 @@ def test_preview_performs_no_mutations() -> None:
 
     assert dict(preview.support_operations) == {"create": 1, "reuse": 0}
     assert dict(preview.process_operations) == {"create": 3, "reuse": 0}
-    assert dict(preview.relation_operations) == {"create": 3, "reuse": 0}
+    assert dict(preview.relation_operations) == {"create": 4, "reuse": 0}
     assert client.mutations == []

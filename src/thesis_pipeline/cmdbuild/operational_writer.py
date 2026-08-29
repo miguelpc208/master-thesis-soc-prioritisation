@@ -15,14 +15,34 @@ from thesis_pipeline.cmdbuild.operational_payloads import (
     OperationalRelationPayload,
     OperationalSupportCardPayload,
     OperationalValue,
-    ProcessReference,
     RoleReference,
     SupportReference,
 )
 
 
 class OperationalIngestionError(RuntimeError):
-    """Raised when operational ingestion cannot proceed or roll back safely."""
+    """Raised when operational ingestion cannot proceed safely."""
+
+
+class OperationalPartialCommitError(OperationalIngestionError):
+    """Report native process objects preserved for idempotent recovery."""
+
+    def __init__(
+        self,
+        *,
+        support_cards_preserved: int,
+        processes_preserved: int,
+        relation_cleanup_failures: int,
+    ) -> None:
+        self.support_cards_preserved = support_cards_preserved
+        self.processes_preserved = processes_preserved
+        self.relation_cleanup_failures = relation_cleanup_failures
+        super().__init__(
+            "Operational ingestion stopped with a recoverable partial commit: "
+            f"support={support_cards_preserved}, "
+            f"processes={processes_preserved}, "
+            f"relation_cleanup_failures={relation_cleanup_failures}"
+        )
 
 
 class OperationalWriteClient(Protocol):
@@ -36,11 +56,15 @@ class OperationalWriteClient(Protocol):
 
     def start_activities(self, process_id: str) -> list[dict[str, Any]]: ...
 
+    def process_activity_definition(
+        self,
+        process_id: str,
+        activity_id: str,
+    ) -> dict[str, Any]: ...
+
     def domain_relations(self, domain_id: str) -> list[dict[str, Any]]: ...
 
     def create_card(self, class_id: str, attributes: Mapping[str, Any]) -> int: ...
-
-    def delete_card(self, class_id: str, card_id: int) -> None: ...
 
     def create_process_instance(
         self,
@@ -50,8 +74,6 @@ class OperationalWriteClient(Protocol):
         *,
         advance: bool,
     ) -> int: ...
-
-    def delete_process_instance(self, process_id: str, instance_id: int) -> None: ...
 
     def create_relation(
         self,
@@ -203,7 +225,6 @@ def _resolve_value(
     value: OperationalValue,
     client: OperationalWriteClient,
     support_ids: Mapping[str, int],
-    process_ids: Mapping[str, int],
     role_cache: dict[tuple[str, str, str], int],
 ) -> Any:
     if isinstance(value, LookupReference):
@@ -214,10 +235,6 @@ def _resolve_value(
         if value.key not in support_ids:
             raise OperationalIngestionError(f"Unresolved support reference: {value.key}")
         return support_ids[value.key]
-    if isinstance(value, ProcessReference):
-        if value.key not in process_ids:
-            raise OperationalIngestionError(f"Unresolved process reference: {value.key}")
-        return process_ids[value.key]
     return value
 
 
@@ -225,7 +242,6 @@ def _resolved_attributes(
     attributes: tuple[tuple[str, OperationalValue], ...],
     client: OperationalWriteClient,
     support_ids: Mapping[str, int],
-    process_ids: Mapping[str, int],
     role_cache: dict[tuple[str, str, str], int],
 ) -> tuple[tuple[str, Any], ...]:
     return tuple(
@@ -235,7 +251,6 @@ def _resolved_attributes(
                 value,
                 client,
                 support_ids,
-                process_ids,
                 role_cache,
             ),
         )
@@ -263,6 +278,29 @@ def _validate_start_activities(
         if len(matches) != 1:
             raise OperationalIngestionError(
                 f"Expected one start activity {expected} for {process_id}"
+            )
+        definition = client.process_activity_definition(process_id, expected)
+        attributes = definition.get("attributes")
+        if not isinstance(attributes, list):
+            raise OperationalIngestionError(
+                f"Start activity {expected} has no attribute contract"
+            )
+        writable = {
+            attribute.get("_id")
+            for attribute in attributes
+            if isinstance(attribute, dict)
+            and attribute.get("writable") is True
+            and isinstance(attribute.get("_id"), str)
+        }
+        payload = next(
+            process for process in processes if process.process_id == process_id
+        )
+        provided = {name for name, _value in payload.attributes}
+        unsupported = sorted(provided - writable)
+        if unsupported:
+            raise OperationalIngestionError(
+                f"Start activity {expected} field mismatch; "
+                f"unsupported={unsupported}"
             )
 
 
@@ -390,7 +428,6 @@ def prepare_operational_ingestion(
             payload.attributes,
             client,
             support_ids,
-            process_ids,
             role_cache,
         )
         existing = existing_support.get(payload.key)
@@ -418,7 +455,6 @@ def prepare_operational_ingestion(
             payload.attributes,
             client,
             support_ids,
-            process_ids,
             role_cache,
         )
         existing = existing_processes.get(payload.key)
@@ -486,7 +522,7 @@ def execute_operational_ingestion(
     *,
     expected_fingerprint: str,
 ) -> OperationalIngestionResult:
-    """Execute a validated operational plan with bounded reverse-order rollback."""
+    """Execute a plan while preserving native processes for idempotent recovery."""
 
     if expected_fingerprint != plan.fingerprint:
         raise OperationalIngestionError("Operational payload fingerprint mismatch")
@@ -513,7 +549,6 @@ def execute_operational_ingestion(
                     action.payload.attributes,
                     client,
                     support_ids,
-                    process_ids,
                     role_cache,
                 )
             )
@@ -529,7 +564,6 @@ def execute_operational_ingestion(
                     action.payload.attributes,
                     client,
                     support_ids,
-                    process_ids,
                     role_cache,
                 )
             )
@@ -565,19 +599,11 @@ def execute_operational_ingestion(
                 client.delete_relation(domain_id, relation_id)
             except Exception as exc:  # noqa: BLE001
                 rollback_errors.append(exc)
-        for process_id, instance_id in reversed(created_processes):
-            try:
-                client.delete_process_instance(process_id, instance_id)
-            except Exception as exc:  # noqa: BLE001
-                rollback_errors.append(exc)
-        for class_id, card_id in reversed(created_support):
-            try:
-                client.delete_card(class_id, card_id)
-            except Exception as exc:  # noqa: BLE001
-                rollback_errors.append(exc)
-        if rollback_errors:
-            raise OperationalIngestionError(
-                f"Operational rollback failed for {len(rollback_errors)} object(s)"
+        if created_support or created_processes or created_relations:
+            raise OperationalPartialCommitError(
+                support_cards_preserved=len(created_support),
+                processes_preserved=len(created_processes),
+                relation_cleanup_failures=len(rollback_errors),
             ) from ingestion_error
         raise
 

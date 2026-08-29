@@ -342,6 +342,24 @@ class CMDBuildClient:
         )
         return self._require_list(data, "process instances")
 
+    def process_activity_definition(
+        self,
+        process_id: str,
+        activity_id: str,
+    ) -> dict[str, Any]:
+        """Return the native form contract for one workflow activity."""
+
+        data = self._request(
+            "GET",
+            f"/processes/{self._segment(process_id)}/activities/"
+            f"{self._segment(activity_id)}",
+        )
+        if not isinstance(data, dict):
+            raise CMDBuildResponseError(
+                "CMDBuild returned an invalid process activity definition"
+            )
+        return data
+
     def create_card(self, class_id: str, attributes: Mapping[str, Any]) -> int:
         """Create one card and return its installation-specific identifier."""
 
@@ -381,8 +399,8 @@ class CMDBuildClient:
         )
         return self._require_identifier(data, "process instance creation")
 
-    def delete_process_instance(self, process_id: str, instance_id: int) -> None:
-        """Delete one process instance, used only by bounded rollback."""
+    def abort_process_instance(self, process_id: str, instance_id: int) -> None:
+        """Abort one process instance without claiming physical deletion."""
 
         self._request(
             "DELETE",

@@ -33,6 +33,7 @@ from thesis_pipeline.cmdbuild.operational_writer import (
     OperationalIngestionError,
     OperationalIngestionPreview,
     OperationalIngestionResult,
+    OperationalPartialCommitError,
     execute_operational_ingestion,
     prepare_operational_ingestion,
 )
@@ -60,6 +61,7 @@ __all__ = [
     "CardReference",
     "LookupReference",
     "OperationalIngestionError",
+    "OperationalPartialCommitError",
     "OperationalIngestionPreview",
     "OperationalIngestionResult",
     "OperationalPayloadError",

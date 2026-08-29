@@ -14,8 +14,9 @@ from thesis_pipeline.models import WorkflowRecord
 from thesis_pipeline.simulation.workflow import SimulationResult
 
 PROCESS_ORDER = ("incident", "change")
-RELATION_ORDER = ("incident_asset", "change_asset")
+RELATION_ORDER = ("incident_asset", "change_asset", "incident_change")
 SUPPORT_ORDER = ("area",)
+OPERATIONAL_CONTRACT_VERSION = "monitoring-native-start-v2"
 
 
 class OperationalPayloadError(RuntimeError):
@@ -38,15 +39,8 @@ class SupportReference:
     key: str
 
 
-@dataclass(frozen=True, slots=True)
-class ProcessReference:
-    """Reference to another planned process instance."""
-
-    key: str
-
-
 OperationalValue = (
-    str | int | float | bool | LookupReference | RoleReference | SupportReference | ProcessReference
+    str | int | float | bool | LookupReference | RoleReference | SupportReference
 )
 
 
@@ -85,7 +79,7 @@ class OperationalEndpointReference:
 
 @dataclass(frozen=True, slots=True)
 class OperationalRelationPayload:
-    """One independent ITProcCI relation between a process and a server."""
+    """One explicit relation between operational process and business objects."""
 
     domain: str
     domain_id: str
@@ -138,11 +132,6 @@ def _entity(mapping: Mapping[str, Any], entity: str) -> Mapping[str, Any]:
     return _section(_section(mapping, "entities"), entity)
 
 
-def _field(mapping: Mapping[str, Any], entity: str, logical_name: str) -> str:
-    fields = _section(_entity(mapping, entity), "fields")
-    return _required_string(fields.get(logical_name), f"entities.{entity}.{logical_name}")
-
-
 def _process_id(mapping: Mapping[str, Any], entity: str) -> str:
     return _required_string(
         _entity(mapping, entity).get("cmdbuild_id"),
@@ -155,6 +144,37 @@ def _start_activity(mapping: Mapping[str, Any], entity: str) -> str:
         _entity(mapping, entity).get("start_activity"),
         f"entities.{entity}.start_activity",
     )
+
+
+def _start_activity_fields(mapping: Mapping[str, Any], entity: str) -> tuple[str, ...]:
+    values = _entity(mapping, entity).get("start_activity_fields")
+    if not isinstance(values, list) or not values:
+        raise OperationalPayloadError(
+            f"Start-activity field contract is missing: entities.{entity}"
+        )
+    fields = tuple(
+        _required_string(value, f"entities.{entity}.start_activity_fields")
+        for value in values
+    )
+    if len(set(fields)) != len(fields):
+        raise OperationalPayloadError(
+            f"Start-activity field contract contains duplicates: {entity}"
+        )
+    return fields
+
+
+def _start_attributes(
+    mapping: Mapping[str, Any],
+    entity: str,
+    attributes: tuple[tuple[str, OperationalValue], ...],
+) -> tuple[tuple[str, OperationalValue], ...]:
+    expected = _start_activity_fields(mapping, entity)
+    actual = tuple(name for name, _value in attributes)
+    if actual != expected:
+        raise OperationalPayloadError(
+            f"Payload does not match {entity} start-activity fields: {actual}"
+        )
+    return attributes
 
 
 def _support(mapping: Mapping[str, Any], name: str) -> Mapping[str, Any]:
@@ -173,7 +193,8 @@ def _domain(
 
 
 def _code(prefix: str, key: str) -> str:
-    digest = hashlib.sha256(key.encode("utf-8")).hexdigest()[:20].upper()
+    fingerprint_input = f"{OPERATIONAL_CONTRACT_VERSION}:{key}"
+    digest = hashlib.sha256(fingerprint_input.encode("utf-8")).hexdigest()[:20].upper()
     return f"{prefix}-{digest}"
 
 
@@ -185,16 +206,6 @@ def _priority(record: WorkflowRecord) -> str:
     if record.finding.cvss >= 4.0:
         return "medium"
     return "normal"
-
-
-def _lookup(mapping: Mapping[str, Any], family: str, code_name: str) -> LookupReference:
-    lookup = _section(_section(mapping, "lookups"), family)
-    codes = _section(lookup, "codes")
-    return LookupReference(
-        family=family,
-        lookup_type=_required_string(lookup.get("type"), f"lookups.{family}.type"),
-        code=_required_string(codes.get(code_name), f"lookups.{family}.{code_name}"),
-    )
 
 
 def _serialise_value(value: OperationalValue) -> Any:
@@ -214,8 +225,6 @@ def _serialise_value(value: OperationalValue) -> Any:
         }
     if isinstance(value, SupportReference):
         return {"kind": "support", "key": value.key}
-    if isinstance(value, ProcessReference):
-        return {"kind": "process", "key": value.key}
     return value
 
 
@@ -346,6 +355,7 @@ def build_operational_payload_plan(
     server_id = _process_id(mapping, "server")
     incident_domain_id, incident_direction = _domain(mapping, "incident_asset")
     change_domain_id, change_direction = _domain(mapping, "change_asset")
+    parent_domain_id, parent_direction = _domain(mapping, "incident_change")
 
     processes: list[OperationalProcessPayload] = []
     relations: list[OperationalRelationPayload] = []
@@ -355,9 +365,11 @@ def build_operational_payload_plan(
         occurrence_key = record.finding.correlation_key
         incident_key = f"incident:{occurrence_key}"
         incident_key_by_occurrence[occurrence_key] = incident_key
-        incident_code = _code("INC", occurrence_key)
+        incident_code = _code("INC2", occurrence_key)
+        operational_priority = _priority(record)
         short_description = (
-            f"{incident_code} | {record.finding.cve_id} on {record.finding.asset_id}"
+            f"{incident_code} | {operational_priority.upper()} | "
+            f"{record.finding.cve_id} on {record.finding.asset_id}"
         )
         processes.append(
             OperationalProcessPayload(
@@ -367,17 +379,14 @@ def build_operational_payload_plan(
                 start_activity=_start_activity(mapping, "incident"),
                 identity_attribute="ShortDescr",
                 identity_value=short_description,
-                attributes=(
-                    (_field(mapping, "incident", "code"), incident_code),
-                    (_field(mapping, "incident", "description"), short_description),
-                    ("ShortDescr", short_description),
-                    ("AreaRef", area_reference),
+                attributes=_start_attributes(
+                    mapping,
+                    "incident",
                     (
-                        _field(mapping, "incident", "severity"),
-                        _lookup(mapping, "process_priority", _priority(record)),
+                        ("ShortDescr", short_description),
+                        ("AreaRef", area_reference),
+                        ("Channel", channel_reference),
                     ),
-                    (_field(mapping, "incident", "opened_at"), record.alert_created.isoformat()),
-                    (_field(mapping, "incident", "closed_at"), record.closed_at.isoformat()),
                 ),
             )
         )
@@ -401,7 +410,7 @@ def build_operational_payload_plan(
 
         occurrence_key = record.finding.correlation_key
         change_key = f"change:{occurrence_key}"
-        change_code = _code("CHG", occurrence_key)
+        change_code = _code("CHG2", occurrence_key)
         short_description = (
             f"{change_code} | Remediate {record.finding.cve_id} "
             f"on {record.finding.asset_id}"
@@ -414,22 +423,12 @@ def build_operational_payload_plan(
                 start_activity=_start_activity(mapping, "change"),
                 identity_attribute="ShortDescr",
                 identity_value=short_description,
-                attributes=(
-                    (_field(mapping, "change", "code"), change_code),
-                    (_field(mapping, "change", "description"), short_description),
-                    ("Channel", channel_reference),
-                    ("ShortDescr", short_description),
+                attributes=_start_attributes(
+                    mapping,
+                    "change",
                     (
-                        _field(mapping, "change", "incident_id"),
-                        ProcessReference(incident_key_by_occurrence[occurrence_key]),
-                    ),
-                    (
-                        _field(mapping, "change", "started_at"),
-                        record.remediation_started.isoformat(),
-                    ),
-                    (
-                        _field(mapping, "change", "completed_at"),
-                        record.remediation_completed.isoformat(),
+                        ("Channel", channel_reference),
+                        ("ShortDescr", short_description),
                     ),
                 ),
             )
@@ -442,6 +441,23 @@ def build_operational_payload_plan(
                 source=OperationalEndpointReference("process", change_id, change_key),
                 destination=OperationalEndpointReference(
                     "asset", server_id, record.finding.asset_id
+                ),
+            )
+        )
+        relations.append(
+            OperationalRelationPayload(
+                domain="incident_change",
+                domain_id=parent_domain_id,
+                direction=parent_direction,
+                source=OperationalEndpointReference(
+                    "process",
+                    incident_id,
+                    incident_key_by_occurrence[occurrence_key],
+                ),
+                destination=OperationalEndpointReference(
+                    "process",
+                    change_id,
+                    change_key,
                 ),
             )
         )

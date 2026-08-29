@@ -143,6 +143,11 @@
       "cmdbuild_id": "IncidentMgt",
       "expected_description": "Incident management",
       "start_activity": "IM02-HDOpening",
+      "start_activity_fields": [
+        "ShortDescr",
+        "AreaRef",
+        "Channel"
+      ],
       "fields": {
         "code": "Code",
         "description": "Description",
@@ -164,6 +169,10 @@
       "cmdbuild_id": "ChangeMgt",
       "expected_description": "Change management",
       "start_activity": "CM01-Opening",
+      "start_activity_fields": [
+        "Channel",
+        "ShortDescr"
+      ],
       "fields": {
         "code": "Code",
         "description": "Description",
