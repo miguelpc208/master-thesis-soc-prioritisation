@@ -20,6 +20,10 @@ engineering contract, not evidence of exploitation, enterprise exposure or curre
 
 The importer verifies the configured upstream commit, both source checksums, acquisition manifest,
 read-only profile scope and deterministic joint fingerprint before accepting any source record.
+Profile contract `diversevul-profile-v2` additionally records
+`vulzoo_join.canonical_cve_ids_sha256`, computed over the sorted, newline-delimited canonical CVE
+IDs. The importer compares both the count and this identity digest before opening an ingestion run;
+a same-sized but different catalogue is rejected.
 An approved UTC-aware acquisition timestamp is used when available. When only the configured
 retrieval date is available, conservative end-of-day UTC is used instead of inventing finer
 precision. The filename token `20230702` is not a verified source-availability date.
@@ -98,7 +102,7 @@ Migration `004_diversevul_integration.sql` adds:
 - `diversevul_function_cve` for exact canonical CVE associations with evidence provenance.
 
 Approved input rows are written within one SQLite transaction. Changed source files, changed
-canonical catalogue counts, profile-count mismatches, invalid function rows or foreign-key errors
+canonical catalogue identities or counts, profile-count mismatches, invalid function rows or foreign-key errors
 roll back every newly inserted research row while retaining a failed ingestion-run audit record.
 Rejections contain only relative paths, reason codes, bounded identifiers and hashes.
 

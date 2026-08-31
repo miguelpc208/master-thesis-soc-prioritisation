@@ -8,6 +8,13 @@ import platform
 import subprocess
 import sys
 
+from thesis_pipeline.cmdbuild.workflow import (
+    build_cmdbuild_plans,
+    export_cmdbuild_evidence,
+    ingest_business_cmdbuild,
+    ingest_operational_cmdbuild,
+    preview_cmdbuild,
+)
 from thesis_pipeline.config import ConfigurationError, load_experiment, load_scenario
 from thesis_pipeline.ingestion.advisories import ingest_github_advisories
 from thesis_pipeline.ingestion.coverage import scan_vulzoo_coverage
@@ -62,6 +69,22 @@ def doctor() -> int:
     )
     print(json.dumps(checks, indent=2, sort_keys=True))
     return 0 if checks["ready_for_synthetic_smoke"] else 1
+
+
+def _cmdbuild_arguments(parser: argparse.ArgumentParser, *, database: bool) -> None:
+    root = project_root()
+    parser.add_argument(
+        "--scenario", default=str(root / "configs/scenarios/smoke.yaml")
+    )
+    parser.add_argument(
+        "--mapping", default=str(root / "config/cmdbuild_fields.json")
+    )
+    parser.add_argument(
+        "--simulation-contract", default=str(root / "config/simulation.json")
+    )
+    parser.add_argument("--env-file", default=str(root / "config/.env"))
+    if database:
+        parser.add_argument("--database", required=True)
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -144,6 +167,37 @@ def build_parser() -> argparse.ArgumentParser:
         "init-db", help="Initialise the versioned SQLite schema outside the repository"
     )
     database.add_argument("--path", required=True)
+
+    cmdbuild_preview = subparsers.add_parser(
+        "cmdbuild-preview",
+        help="Rebuild and inspect deterministic CMDBuild plans without mutation",
+    )
+    _cmdbuild_arguments(cmdbuild_preview, database=False)
+    cmdbuild_preview.add_argument(
+        "--phase", choices=("business", "operational", "all"), default="business"
+    )
+    cmdbuild_preview.add_argument("--database")
+
+    cmdbuild_business = subparsers.add_parser(
+        "cmdbuild-ingest-business",
+        help="Execute the business plan behind an exact fingerprint gate",
+    )
+    _cmdbuild_arguments(cmdbuild_business, database=False)
+    cmdbuild_business.add_argument("--expected-fingerprint", required=True)
+
+    cmdbuild_operational = subparsers.add_parser(
+        "cmdbuild-ingest-operational",
+        help="Execute the operational plan behind an exact fingerprint gate",
+    )
+    _cmdbuild_arguments(cmdbuild_operational, database=True)
+    cmdbuild_operational.add_argument("--expected-fingerprint", required=True)
+
+    cmdbuild_evidence = subparsers.add_parser(
+        "cmdbuild-export-evidence",
+        help="Export deterministic metadata-only CMDBuild evidence outside Git",
+    )
+    _cmdbuild_arguments(cmdbuild_evidence, database=True)
+    cmdbuild_evidence.add_argument("--output", required=True)
 
     run = subparsers.add_parser("run-experiment", help="Run an enabled experiment")
     run.add_argument("--experiment", required=True)
@@ -246,6 +300,38 @@ def main(argv: list[str] | None = None) -> int:
             return 0
         if args.command == "init-db":
             print(initialise_database(args.path))
+            return 0
+        if args.command.startswith("cmdbuild-"):
+            database_path = getattr(args, "database", None)
+            if args.command == "cmdbuild-preview" and args.phase in {
+                "operational",
+                "all",
+            } and not database_path:
+                raise ValueError("Operational CMDBuild preview requires --database")
+            plans = build_cmdbuild_plans(
+                scenario_path=args.scenario,
+                mapping_path=args.mapping,
+                simulation_contract_path=args.simulation_contract,
+                database_path=database_path,
+            )
+            if args.command == "cmdbuild-preview":
+                result = preview_cmdbuild(plans, env_file=args.env_file, phase=args.phase)
+            elif args.command == "cmdbuild-ingest-business":
+                result = ingest_business_cmdbuild(
+                    plans,
+                    env_file=args.env_file,
+                    expected_fingerprint=args.expected_fingerprint,
+                )
+            elif args.command == "cmdbuild-ingest-operational":
+                result = ingest_operational_cmdbuild(
+                    plans,
+                    env_file=args.env_file,
+                    expected_fingerprint=args.expected_fingerprint,
+                )
+            else:
+                preview = preview_cmdbuild(plans, env_file=args.env_file, phase="all")
+                result = export_cmdbuild_evidence(plans, preview, args.output)
+            print(json.dumps(result, indent=2, sort_keys=True))
             return 0
         if args.command == "run-experiment":
             path = run_experiment(

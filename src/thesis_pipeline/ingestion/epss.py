@@ -18,11 +18,12 @@ from typing import Any
 
 import yaml
 
+from thesis_pipeline.ingestion.catalogue import canonical_cve_ids_sha256
 from thesis_pipeline.ingestion.normalise import _now_utc, _stable_id
 from thesis_pipeline.storage.schema import initialise_database
 
-INGESTION_CONTRACT = "first-epss-ingestion-v1"
-ACQUISITION_CONTRACT = "first-epss-acquisition-v1"
+INGESTION_CONTRACT = "first-epss-ingestion-v2"
+ACQUISITION_CONTRACT = "first-epss-acquisition-v2"
 ARCHIVE_REPOSITORY = "https://github.com/empiricalsec/epss_scores"
 ARCHIVE_RAW_ROOT = "https://raw.githubusercontent.com/empiricalsec/epss_scores"
 SHA256_PATTERN = re.compile(r"^[0-9a-f]{64}$")
@@ -59,6 +60,7 @@ class ApprovedEpssPanel:
     last_score_date: str
     model_version: str
     canonical_cves: int
+    canonical_cve_ids_sha256: str
 
 
 def _read_json(path: str | Path) -> dict[str, Any]:
@@ -359,6 +361,10 @@ def _validated_inputs(
         raise ValueError(
             "The EPSS acquisition manifest requires a non-empty canonical CVE catalogue"
         )
+    canonical_fingerprint = _sha256(
+        totals.get("canonical_vulzoo_cve_ids_sha256"),
+        "canonical VulZoo CVE identity fingerprint",
+    )
 
     return ApprovedEpssPanel(
         source=source,
@@ -372,6 +378,7 @@ def _validated_inputs(
         last_score_date=last_date,
         model_version=model_version,
         canonical_cves=canonical,
+        canonical_cve_ids_sha256=canonical_fingerprint,
     )
 
 
@@ -484,6 +491,7 @@ def _ingest_day(
     inputs: ApprovedEpssPanel,
     daily: ApprovedDailyFile,
     canonical_cves: set[str],
+    panel_ingestion_id: str,
     *,
     processed_before: int,
     progress_every: int,
@@ -513,6 +521,22 @@ def _ingest_day(
             "running",
             inputs.fingerprint,
             json.dumps(configuration, separators=(",", ":"), sort_keys=True),
+            started_at,
+        ),
+    )
+    connection.execute(
+        """
+        INSERT INTO epss_panel_ingestion_day(
+            epss_panel_ingestion_id, score_date, source_snapshot_id, ingestion_run_id,
+            status, created_at_utc
+        ) VALUES (?, ?, ?, ?, ?, ?)
+        """,
+        (
+            panel_ingestion_id,
+            daily.score_date,
+            snapshot_id,
+            run_id,
+            "running",
             started_at,
         ),
     )
@@ -594,12 +618,28 @@ def _ingest_day(
             """,
             (_now_utc(), "succeeded", len(seen_cves), matched, 0, run_id),
         )
+        connection.execute(
+            """
+            UPDATE epss_panel_ingestion_day
+            SET status = ?, completed_at_utc = ?
+            WHERE epss_panel_ingestion_id = ? AND score_date = ?
+            """,
+            ("succeeded", _now_utc(), panel_ingestion_id, daily.score_date),
+        )
         connection.commit()
     except Exception:
         connection.rollback()
         connection.execute(
             "UPDATE ingestion_run SET completed_at_utc = ?, status = ? WHERE ingestion_run_id = ?",
             (_now_utc(), "failed", run_id),
+        )
+        connection.execute(
+            """
+            UPDATE epss_panel_ingestion_day
+            SET status = ?, completed_at_utc = ?
+            WHERE epss_panel_ingestion_id = ? AND score_date = ?
+            """,
+            ("failed", _now_utc(), panel_ingestion_id, daily.score_date),
         )
         connection.commit()
         raise
@@ -640,25 +680,92 @@ def ingest_epss_panel(
         canonical_cves = {str(row[0]) for row in connection.execute("SELECT cve_id FROM cve")}
         if len(canonical_cves) != inputs.canonical_cves:
             raise RuntimeError("The canonical VulZoo catalogue changed after EPSS acquisition")
+        if canonical_cve_ids_sha256(canonical_cves) != inputs.canonical_cve_ids_sha256:
+            raise RuntimeError(
+                "The canonical VulZoo CVE identities changed after EPSS acquisition"
+            )
+
+        panel_ingestion_id = f"epss-panel:{uuid.uuid4()}"
+        panel_started_at = _now_utc()
+        connection.execute(
+            """
+            INSERT INTO epss_panel_ingestion(
+                epss_panel_ingestion_id, panel_fingerprint_sha256,
+                first_score_date, last_score_date, expected_days,
+                completed_days, status, started_at_utc, created_at_utc
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                panel_ingestion_id,
+                inputs.fingerprint,
+                inputs.first_score_date,
+                inputs.last_score_date,
+                len(inputs.files),
+                0,
+                "running",
+                panel_started_at,
+                panel_started_at,
+            ),
+        )
+        connection.commit()
 
         daily_results = []
         processed = 0
-        for index, daily in enumerate(inputs.files, start=1):
-            print(
-                f"Ingesting EPSS day {index}/{len(inputs.files)}: {daily.score_date}",
-                file=sys.stderr,
-                flush=True,
+        try:
+            for index, daily in enumerate(inputs.files, start=1):
+                print(
+                    f"Ingesting EPSS day {index}/{len(inputs.files)}: {daily.score_date}",
+                    file=sys.stderr,
+                    flush=True,
+                )
+                result = _ingest_day(
+                    connection,
+                    inputs,
+                    daily,
+                    canonical_cves,
+                    panel_ingestion_id,
+                    processed_before=processed,
+                    progress_every=progress_every,
+                )
+                processed += daily.source_records
+                daily_results.append(result)
+            completed_days = connection.execute(
+                """
+                SELECT COUNT(*) FROM epss_panel_ingestion_day
+                WHERE epss_panel_ingestion_id = ? AND status = 'succeeded'
+                """,
+                (panel_ingestion_id,),
+            ).fetchone()[0]
+            if completed_days != len(inputs.files):
+                raise RuntimeError("EPSS panel did not complete every approved day")
+            connection.execute(
+                """
+                UPDATE epss_panel_ingestion
+                SET completed_days = ?, status = ?, completed_at_utc = ?
+                WHERE epss_panel_ingestion_id = ?
+                """,
+                (completed_days, "succeeded", _now_utc(), panel_ingestion_id),
             )
-            result = _ingest_day(
-                connection,
-                inputs,
-                daily,
-                canonical_cves,
-                processed_before=processed,
-                progress_every=progress_every,
+            connection.commit()
+        except Exception:
+            connection.rollback()
+            completed_days = connection.execute(
+                """
+                SELECT COUNT(*) FROM epss_panel_ingestion_day
+                WHERE epss_panel_ingestion_id = ? AND status = 'succeeded'
+                """,
+                (panel_ingestion_id,),
+            ).fetchone()[0]
+            connection.execute(
+                """
+                UPDATE epss_panel_ingestion
+                SET completed_days = ?, status = ?, completed_at_utc = ?
+                WHERE epss_panel_ingestion_id = ?
+                """,
+                (completed_days, "failed", _now_utc(), panel_ingestion_id),
             )
-            processed += daily.source_records
-            daily_results.append(result)
+            connection.commit()
+            raise
 
     return {
         "contract": INGESTION_CONTRACT,
@@ -666,6 +773,7 @@ def ingest_epss_panel(
         "input_fingerprint_sha256": inputs.fingerprint,
         "retrieved_at_utc": inputs.retrieved_at_utc,
         "archive_commit": inputs.upstream_commit,
+        "epss_panel_ingestion_id": panel_ingestion_id,
         "model_version": inputs.model_version,
         "panel": {
             "first_score_date": inputs.first_score_date,

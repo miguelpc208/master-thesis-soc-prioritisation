@@ -15,6 +15,7 @@ from pathlib import Path
 from typing import Any
 
 from thesis_pipeline.models import Finding, ScenarioConfig
+from thesis_pipeline.risk import calculate_risk_weight
 
 CVE_PATTERN = re.compile(r"^CVE-\d{4}-\d{4,}$")
 SEVERITIES = ("critical", "high", "medium", "low")
@@ -170,6 +171,23 @@ def _validate_schema(connection: sqlite3.Connection) -> None:
             "score_date",
             "model_version",
             "source_name",
+            "source_snapshot_id",
+        },
+        "epss_panel_ingestion": {
+            "epss_panel_ingestion_id",
+            "panel_fingerprint_sha256",
+            "first_score_date",
+            "last_score_date",
+            "expected_days",
+            "completed_days",
+            "status",
+        },
+        "epss_panel_ingestion_day": {
+            "epss_panel_ingestion_id",
+            "score_date",
+            "source_snapshot_id",
+            "ingestion_run_id",
+            "status",
         },
         "kev_observation": {
             "cve_id",
@@ -235,10 +253,30 @@ def _candidate_query() -> str:
               AND observed_at_utc IS NOT NULL
               AND datetime(observed_at_utc) <= datetime(:cutoff)
         ),
+        epss_latest_date AS (
+            SELECT MAX(day.score_date) AS score_date
+            FROM epss_panel_ingestion AS panel
+            INNER JOIN epss_panel_ingestion_day AS day
+                ON day.epss_panel_ingestion_id = panel.epss_panel_ingestion_id
+               AND day.status = 'succeeded'
+            WHERE panel.status = 'succeeded'
+              AND panel.completed_days = panel.expected_days
+              AND date(day.score_date) < date(:cutoff)
+        ),
         epss_panel AS (
-            SELECT MAX(score_date) AS score_date
-            FROM epss_observation
-            WHERE date(score_date) < date(:cutoff)
+            SELECT
+                day.score_date,
+                MIN(day.source_snapshot_id) AS source_snapshot_id,
+                COUNT(DISTINCT day.source_snapshot_id) AS source_snapshot_count
+            FROM epss_panel_ingestion AS panel
+            INNER JOIN epss_panel_ingestion_day AS day
+                ON day.epss_panel_ingestion_id = panel.epss_panel_ingestion_id
+               AND day.status = 'succeeded'
+            INNER JOIN epss_latest_date AS latest
+                ON latest.score_date = day.score_date
+            WHERE panel.status = 'succeeded'
+              AND panel.completed_days = panel.expected_days
+            GROUP BY day.score_date
         ),
         ranked_epss AS (
             SELECT
@@ -255,8 +293,10 @@ def _candidate_query() -> str:
             FROM epss_observation AS observation
             INNER JOIN epss_panel AS panel
                 ON panel.score_date = observation.score_date
+               AND panel.source_snapshot_id = observation.source_snapshot_id
             WHERE observation.score IS NOT NULL
               AND observation.score BETWEEN 0.0 AND 1.0
+              AND panel.source_snapshot_count = 1
         ),
         kev_snapshot AS (
             SELECT MAX(catalogue_date) AS catalogue_date
@@ -458,6 +498,7 @@ def _select_records(
 def _binding_fingerprint(
     source_fingerprint: str,
     bindings: tuple[PublicCVEBinding, ...],
+    bound_findings: tuple[Finding, ...],
     cutoff: datetime,
     epss_as_of_date: date,
     minimum_kev: int,
@@ -471,18 +512,38 @@ def _binding_fingerprint(
         "selection_mode": "minimum_kev_coverage" if minimum_kev else "natural",
         "minimum_kev": minimum_kev,
         "coverage_replacements": coverage_replacements,
+        "risk_weight_policy": "cvss_x_asset_x_service_x_exposure_x_control_v1",
         "bindings": [
             {
                 "synthetic_cve_id": binding.synthetic_cve_id,
                 "asset_id": binding.asset_id,
                 "public_cve_id": binding.public.cve_id,
+                "cve_published_at_utc": binding.public.published_at_utc.isoformat(),
+                "cve_source_name": binding.public.source_name,
                 "cvss": binding.public.cvss,
+                "cvss_version": binding.public.cvss_version,
                 "cvss_observed_at_utc": binding.public.cvss_observed_at_utc.isoformat(),
+                "cvss_source_name": binding.public.cvss_source_name,
                 "epss": binding.public.epss_probability,
+                "epss_percentile": binding.public.epss_percentile,
                 "epss_score_date": binding.public.epss_score_date.isoformat(),
+                "epss_model_version": binding.public.epss_model_version,
+                "epss_source_name": binding.public.epss_source_name,
                 "kev": binding.public.kev,
+                "kev_date_added": (
+                    None
+                    if binding.public.kev_date_added is None
+                    else binding.public.kev_date_added.isoformat()
+                ),
                 "kev_catalogue_date": binding.public.kev_catalogue_date.isoformat(),
+                "known_ransomware_use": binding.public.known_ransomware_use,
                 "diversevul": binding.public.diversevul,
+                "bound_risk_weights": [
+                    finding.risk_weight
+                    for finding in bound_findings
+                    if finding.cve_id == binding.public.cve_id
+                    and finding.asset_id == binding.asset_id
+                ],
             }
             for binding in bindings
         ],
@@ -587,6 +648,13 @@ def bind_public_cves(
                 epss_observed_at=epss_observed_at,
                 kev=public.kev,
                 kev_observed_at=kev_observed_at,
+                risk_weight=calculate_risk_weight(
+                    cvss=public.cvss,
+                    asset_criticality=finding.asset_criticality,
+                    service_criticality=finding.service_criticality,
+                    internet_exposed=finding.internet_exposed,
+                    compensating_control=finding.compensating_control,
+                ),
             )
         )
     bound_tuple = tuple(bound_findings)
@@ -605,6 +673,7 @@ def bind_public_cves(
     fingerprint = _binding_fingerprint(
         dataset.fingerprint,
         bindings,
+        bound_tuple,
         cutoff,
         epss_as_of_date,
         minimum_kev,

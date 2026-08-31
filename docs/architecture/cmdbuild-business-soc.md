@@ -32,3 +32,9 @@ backups belong under `THESIS_DATA_ROOT`, not in the Git repository.
 
 Version configuration, generation code, source provenance, and simulation seed.
 Comparison scenarios must share their population, capacity, and random seed.
+
+The supported entry points are `cmdbuild-preview`, `cmdbuild-ingest-business`,
+`cmdbuild-ingest-operational` and `cmdbuild-export-evidence`. They rebuild plans from the versioned
+scenario, mapping and simulation contracts. Live writes remain behind an exact expected-fingerprint
+gate and the existing rollback-capable writers. Evidence export contains metadata and counts only,
+must target a path outside Git and never overwrites an existing file.

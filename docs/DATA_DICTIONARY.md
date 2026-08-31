@@ -69,6 +69,9 @@ schema.
 | `score_date` | ISO date | Source-effective EPSS date; conservatively available at 23:59:59 UTC |
 | `model_version` | string | Exact EPSS model generation; approved panel uses `v2025.03.14` |
 | `outside_vulzoo_snapshot` | nonnegative integer | Valid EPSS rows excluded because their CVE is absent from the pinned catalogue |
+| `epss_panel_ingestion.status` | enum | Parent state: `running`, `succeeded` only when all days complete, or `failed` |
+| `epss_panel_ingestion.completed_days` | integer | Successful child days; must equal `expected_days` before binding eligibility |
+| `epss_panel_ingestion_day.source_snapshot_id` | string FK | Exact authenticated compressed daily file used by a completed panel |
 
 See `VULNERABILITY_INGESTION_CONTRACT.md` for precedence and rejection rules and
 `TEMPORAL_EVIDENCE_CONTRACT.md` for the as-of modes and claim boundary, and

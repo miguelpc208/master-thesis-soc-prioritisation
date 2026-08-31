@@ -53,6 +53,13 @@ versions and withdrawn advisories become bounded rejection events. A valid `modi
 record is not rejected because publication remains the later authoritative availability bound. No
 canonical CVE may be created from an advisory relationship.
 
+Acquisition contract `vulzoo-github-advisory-acquisition-v2` must enumerate every retained GHSA
+body with its root-relative path, byte length and SHA-256. Its
+`collection_fingerprint_sha256` is the SHA-256 of the canonical JSON inventory sorted by path, and
+the separately approved audit must contain the same fingerprint. The importer compares the exact
+manifest and filesystem inventories before opening an ingestion run, then authenticates and parses
+the same byte sequence for every referenced body. Added, removed or modified bodies fail closed.
+
 The normalized database retains only GHSA identity, authoritative timestamps, bounded severity,
 source path/hash, canonical CVE links, package ecosystem/name/PURL, enumerated affected versions,
 range-event type/value and approved snapshot/run identity. Raw advisory `summary`, `details`,

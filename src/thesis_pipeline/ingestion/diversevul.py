@@ -18,11 +18,12 @@ from urllib.parse import urlsplit
 
 import yaml
 
+from thesis_pipeline.ingestion.catalogue import canonical_cve_ids_sha256
 from thesis_pipeline.ingestion.normalise import DatabaseRejections, _now_utc, _stable_id
 from thesis_pipeline.storage.schema import initialise_database
 
-INGESTION_CONTRACT = "diversevul-ingestion-v1"
-PROFILE_CONTRACT = "diversevul-profile-v1"
+INGESTION_CONTRACT = "diversevul-ingestion-v2"
+PROFILE_CONTRACT = "diversevul-profile-v2"
 ACQUISITION_CONTRACT = "diversevul-acquisition-v1"
 SHA256_PATTERN = re.compile(r"^[0-9a-f]{64}$")
 COMMIT_PATTERN = re.compile(r"^[0-9a-f]{7,40}$", re.IGNORECASE)
@@ -268,6 +269,18 @@ def _validated_inputs(
         raise ValueError("The DiverseVul profile does not contain dataset and metadata counts")
     if not isinstance(join_profile, dict):
         raise ValueError("The DiverseVul profile does not contain a VulZoo join summary")
+    canonical_count = join_profile.get("canonical_cves_available")
+    canonical_fingerprint = join_profile.get("canonical_cve_ids_sha256")
+    if (
+        isinstance(canonical_count, bool)
+        or not isinstance(canonical_count, int)
+        or canonical_count <= 0
+        or not isinstance(canonical_fingerprint, str)
+        or SHA256_PATTERN.fullmatch(canonical_fingerprint) is None
+    ):
+        raise ValueError(
+            "The DiverseVul profile must approve the exact canonical CVE catalogue"
+        )
 
     return ApprovedInputs(
         source=source,
@@ -715,6 +728,13 @@ def ingest_diversevul(
         if len(canonical_cves) != approved_cves:
             raise RuntimeError(
                 "The canonical VulZoo CVE catalogue changed after DiverseVul profiling"
+            )
+        approved_catalogue = inputs.profile["vulzoo_join"].get(
+            "canonical_cve_ids_sha256"
+        )
+        if canonical_cve_ids_sha256(canonical_cves) != approved_catalogue:
+            raise RuntimeError(
+                "The canonical VulZoo CVE identities changed after DiverseVul profiling"
             )
 
         snapshot_id = _insert_snapshot(connection, inputs)

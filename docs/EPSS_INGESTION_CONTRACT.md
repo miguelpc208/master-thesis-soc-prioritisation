@@ -72,9 +72,18 @@ Before creating any EPSS ingestion runs, the importer verifies:
 2. The actual timezone-aware retrieval timestamp against the configured retrieval date.
 3. Exactly one contiguous daily file per approved score date.
 4. Each archive-pinned URL, approved relative path, compressed length and compressed SHA-256.
-5. The official leading comment, unchanged publish timestamp and `v2025.03.14` model version.
-6. Exact CSV fields `cve`, `epss` and `percentile`.
-7. The acquired canonical VulZoo population and per-day input, accepted and excluded counts.
+5. The SHA-256 of the sorted, newline-delimited canonical VulZoo CVE IDs, in addition to its count.
+
+Acquisition contract `first-epss-acquisition-v2` requires the identity digest at
+`totals.canonical_vulzoo_cve_ids_sha256`. Ingestion contract `first-epss-ingestion-v2` records one
+parent panel execution and one child execution per approved day. The parent becomes `succeeded`
+only after every day succeeds. Migration `010_epss_panel_completion.sql` adds these completion
+tables; an existing database must replay the full approved panel after applying migration 010.
+Public-CVE binding ignores running, failed and incomplete parent panels and authenticates the exact
+daily source snapshot used by a completed panel.
+6. The official leading comment, unchanged publish timestamp and `v2025.03.14` model version.
+7. Exact CSV fields `cve`, `epss` and `percentile`.
+8. The acquired canonical VulZoo population and per-day input, accepted and excluded counts.
 
 CVEs must match `CVE-YYYY-NNNN...`; duplicate daily CVEs are rejected. Probability and percentile
 must be finite numeric values between zero and one. Missing or out-of-range values are never

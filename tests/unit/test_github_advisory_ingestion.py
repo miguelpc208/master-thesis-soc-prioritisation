@@ -218,13 +218,28 @@ class GithubAdvisoryIngestionTests(unittest.TestCase):
             }
         }
         self.config.write_text(yaml.safe_dump(sources), encoding="utf-8")
+        advisory_files = [
+            {
+                "relative_path": path.relative_to(self.vulzoo).as_posix(),
+                "size_bytes": path.stat().st_size,
+                "sha256": hashlib.sha256(path.read_bytes()).hexdigest(),
+            }
+            for path in sorted(self.advisory_root.rglob("*.json"))
+        ]
+        collection_fingerprint = hashlib.sha256(
+            json.dumps(
+                advisory_files, sort_keys=True, separators=(",", ":")
+            ).encode("utf-8")
+        ).hexdigest()
         manifest = {
-            "contract": "vulzoo-github-advisory-acquisition-v1",
+            "contract": "vulzoo-github-advisory-acquisition-v2",
             "acquired_at_utc": self.retrieved,
             "vulzoo_commit": self.commit,
             "collection": "processed/github-advisory-database",
             "git_tree_object": self.tree,
             "file_count": 7,
+            "files": advisory_files,
+            "collection_fingerprint_sha256": collection_fingerprint,
             "patch_payloads_acquired": False,
             "exploit_payloads_acquired": False,
         }
@@ -248,6 +263,7 @@ class GithubAdvisoryIngestionTests(unittest.TestCase):
             "database": {"counts": {"canonical_cves": 6}},
             "github_advisories": {
                 "metadata_collection_present": True,
+                "collection_fingerprint_sha256": collection_fingerprint,
                 "raw_references": 7,
                 "cve_alias_verified_links": 6,
                 "cve_alias_mismatch_links": 1,
@@ -292,7 +308,7 @@ class GithubAdvisoryIngestionTests(unittest.TestCase):
                 "FROM patch_reference ORDER BY cve_id"
             ).fetchall()
 
-        self.assertEqual(result["contract"], "vulzoo-github-advisory-remediation-v2")
+        self.assertEqual(result["contract"], "vulzoo-github-advisory-remediation-v3")
         self.assertEqual(
             advisories,
             [
@@ -351,6 +367,24 @@ class GithubAdvisoryIngestionTests(unittest.TestCase):
             }
         ]
         advisory_path.write_text(json.dumps(document), encoding="utf-8")
+        manifest = json.loads(self.manifest.read_text(encoding="utf-8"))
+        files = [
+            {
+                "relative_path": path.relative_to(self.vulzoo).as_posix(),
+                "size_bytes": path.stat().st_size,
+                "sha256": hashlib.sha256(path.read_bytes()).hexdigest(),
+            }
+            for path in sorted(self.advisory_root.rglob("*.json"))
+        ]
+        fingerprint = hashlib.sha256(
+            json.dumps(files, sort_keys=True, separators=(",", ":")).encode("utf-8")
+        ).hexdigest()
+        manifest["files"] = files
+        manifest["collection_fingerprint_sha256"] = fingerprint
+        self.manifest.write_text(json.dumps(manifest), encoding="utf-8")
+        audit = json.loads(self.audit.read_text(encoding="utf-8"))
+        audit["github_advisories"]["collection_fingerprint_sha256"] = fingerprint
+        self.audit.write_text(json.dumps(audit), encoding="utf-8")
 
         second = self._ingest()
         with self._connection() as connection:
@@ -442,6 +476,20 @@ class GithubAdvisoryIngestionTests(unittest.TestCase):
         relation = self.relationships / "rel-cve-patch.json"
         relation.write_text("{}\n", encoding="utf-8")
         with self.assertRaisesRegex(ValueError, "changed after auditing"):
+            self._ingest()
+        with self._connection() as connection:
+            self.assertEqual(
+                connection.execute("SELECT COUNT(*) FROM ingestion_run").fetchone(),
+                (0,),
+            )
+
+    def test_changed_advisory_body_is_rejected_before_a_database_run(self) -> None:
+        advisory = next(iter(sorted(self.advisory_root.rglob("*.json"))))
+        advisory.write_text(
+            advisory.read_text(encoding="utf-8") + "\n",
+            encoding="utf-8",
+        )
+        with self.assertRaisesRegex(RuntimeError, "changed after acquisition"):
             self._ingest()
         with self._connection() as connection:
             self.assertEqual(

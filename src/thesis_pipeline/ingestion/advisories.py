@@ -21,8 +21,8 @@ from thesis_pipeline.ingestion.normalise import DatabaseRejections, _now_utc, _s
 from thesis_pipeline.ingestion.source import load_vulzoo_source_config, resolve_vulzoo_root
 from thesis_pipeline.storage.schema import initialise_database
 
-INGESTION_CONTRACT = "vulzoo-github-advisory-remediation-v2"
-ACQUISITION_CONTRACT = "vulzoo-github-advisory-acquisition-v1"
+INGESTION_CONTRACT = "vulzoo-github-advisory-remediation-v3"
+ACQUISITION_CONTRACT = "vulzoo-github-advisory-acquisition-v2"
 AUDIT_CONTRACT = "vulzoo-patch-advisory-audit-v1"
 COLLECTION_PATH = "processed/github-advisory-database"
 CVE_PATTERN = re.compile(r"^CVE-[0-9]{4}-[0-9]{4,}$")
@@ -56,6 +56,8 @@ class ApprovedAdvisoryInputs:
     fingerprint: str
     upstream_commit: str
     git_tree: str
+    advisory_files: dict[str, tuple[int, str]]
+    collection_fingerprint: str
 
 
 @dataclass
@@ -158,6 +160,34 @@ def _sha256(path: Path) -> str:
         return hashlib.file_digest(stream, "sha256").hexdigest()
 
 
+def _read_verified_advisory(
+    path: Path,
+    *,
+    expected_size: int,
+    expected_digest: str,
+    relative_path: str,
+) -> tuple[dict[str, Any], str]:
+    """Authenticate and parse the same immutable byte sequence."""
+    try:
+        payload = path.read_bytes()
+    except OSError as exc:
+        raise RuntimeError(
+            f"A referenced GHSA body cannot be read: {relative_path}"
+        ) from exc
+    digest = hashlib.sha256(payload).hexdigest()
+    if len(payload) != expected_size or digest != expected_digest:
+        raise RuntimeError(
+            f"A referenced GHSA body changed before ingestion: {relative_path}"
+        )
+    try:
+        document = json.loads(payload.decode("utf-8-sig"))
+    except (UnicodeError, json.JSONDecodeError) as exc:
+        raise ValueError("The approved GitHub advisory source record is invalid") from exc
+    if not isinstance(document, dict):
+        raise ValueError("The approved GitHub advisory source record must be an object")
+    return document, digest
+
+
 def _relationship(path: Path) -> dict[str, Any]:
     if not path.is_file() or path.stat().st_size > MAX_RELATIONSHIP_BYTES:
         raise ValueError(f"The approved relationship is absent or exceeds its bound: {path.name}")
@@ -188,6 +218,65 @@ def _advisory_path(root: Path, value: Any) -> tuple[Path, str] | None:
     if not path.is_relative_to(advisory_root):
         return None
     return path, identifier
+
+
+def _validated_advisory_collection(
+    manifest: dict[str, Any], root: Path, advisory_root: Path
+) -> tuple[dict[str, tuple[int, str]], str]:
+    entries = manifest.get("files")
+    if not isinstance(entries, list) or not entries:
+        raise ValueError("The advisory acquisition manifest must enumerate every GHSA file")
+    approved: dict[str, tuple[int, str]] = {}
+    material: list[dict[str, Any]] = []
+    for entry in entries:
+        if not isinstance(entry, dict):
+            raise ValueError("Every advisory manifest file entry must be a mapping")
+        relative = entry.get("relative_path")
+        if not isinstance(relative, str) or not relative.startswith(f"{COLLECTION_PATH}/"):
+            raise ValueError("An advisory manifest path is outside the approved collection")
+        verified_path = _advisory_path(root, relative.removeprefix("processed/"))
+        if verified_path is None:
+            raise ValueError("An advisory manifest path is not a valid GHSA JSON path")
+        path, _identifier = verified_path
+        if path.parent == advisory_root or not path.is_relative_to(advisory_root):
+            raise ValueError("An advisory manifest path is outside the approved collection")
+        if relative in approved:
+            raise ValueError("The advisory manifest contains a duplicate file path")
+        size_bytes = entry.get("size_bytes")
+        digest = entry.get("sha256")
+        if (
+            isinstance(size_bytes, bool)
+            or not isinstance(size_bytes, int)
+            or size_bytes <= 0
+            or size_bytes > MAX_ADVISORY_BYTES
+        ):
+            raise ValueError("An advisory manifest file size is invalid")
+        if not isinstance(digest, str) or SHA256_PATTERN.fullmatch(digest) is None:
+            raise ValueError("An advisory manifest file digest is invalid")
+        if not path.is_file() or path.stat().st_size != size_bytes or _sha256(path) != digest:
+            raise RuntimeError(f"An approved GHSA body changed after acquisition: {relative}")
+        approved[relative] = (size_bytes, digest)
+        material.append(
+            {"relative_path": relative, "size_bytes": size_bytes, "sha256": digest}
+        )
+
+    actual = {
+        path.relative_to(root).as_posix()
+        for path in advisory_root.rglob("*.json")
+        if path.is_file()
+    }
+    if actual != set(approved):
+        raise RuntimeError("The approved GHSA collection differs from its manifest inventory")
+    fingerprint = hashlib.sha256(
+        json.dumps(
+            sorted(material, key=lambda item: item["relative_path"]),
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode("utf-8")
+    ).hexdigest()
+    if manifest.get("collection_fingerprint_sha256") != fingerprint:
+        raise ValueError("The advisory collection fingerprint is inconsistent")
+    return approved, fingerprint
 
 
 def _load_sources(config_path: str | Path) -> tuple[dict[str, Any], dict[str, Any]]:
@@ -284,6 +373,10 @@ def _validated_inputs(
     if (root / "processed" / "patch-database").exists():
         raise ValueError("The excluded patch payload collection must remain absent")
 
+    advisory_files, collection_fingerprint = _validated_advisory_collection(
+        manifest, root, advisory_root
+    )
+
     relationship_paths = {
         "patch_urls": root / "processed" / "relationships" / "temp-nvd-patch-links.json",
         "patch_hashes": root / "processed" / "relationships" / "rel-cve-patch.json",
@@ -305,8 +398,10 @@ def _validated_inputs(
         relationship_hashes[name] = digest
 
     acquisition_count = manifest.get("file_count")
-    if not isinstance(acquisition_count, int) or acquisition_count <= 0:
-        raise ValueError("The approved advisory manifest must record a positive file count")
+    if acquisition_count != len(advisory_files):
+        raise ValueError("The approved advisory file count differs from its inventory")
+    if advisory_report.get("collection_fingerprint_sha256") != collection_fingerprint:
+        raise ValueError("The advisory audit does not approve the collection fingerprint")
     input_fingerprint = audit.get("input_fingerprint_sha256")
     if (
         not isinstance(input_fingerprint, str)
@@ -320,6 +415,7 @@ def _validated_inputs(
         "decision_at_utc": decision,
         "audit_fingerprint_sha256": input_fingerprint,
         "relationship_hashes": relationship_hashes,
+        "collection_fingerprint_sha256": collection_fingerprint,
     }
     fingerprint = hashlib.sha256(
         json.dumps(material, sort_keys=True, separators=(",", ":")).encode()
@@ -339,6 +435,8 @@ def _validated_inputs(
         fingerprint=fingerprint,
         upstream_commit=upstream_commit,
         git_tree=git_tree,
+        advisory_files=advisory_files,
+        collection_fingerprint=collection_fingerprint,
     )
 
 
@@ -352,6 +450,7 @@ def _insert_snapshot(connection: sqlite3.Connection, inputs: ApprovedAdvisoryInp
         "vulzoo_commit": inputs.upstream_commit,
         "collection": COLLECTION_PATH,
         "collection_file_count": inputs.manifest["file_count"],
+        "collection_fingerprint_sha256": inputs.collection_fingerprint,
         "decision_at_utc": inputs.decision_at_utc,
         "audit_fingerprint_sha256": inputs.audit["input_fingerprint_sha256"],
         "historical_ground_truth_claimed": False,
@@ -617,14 +716,25 @@ def _ingest_advisories(context: AdvisoryContext) -> None:
                 continue
             path, identifier = approved
             relative = path.relative_to(context.inputs.root).as_posix()
-            if not path.is_file() or path.stat().st_size > MAX_ADVISORY_BYTES:
-                _reject(context, "advisory_missing_or_oversized", relative, None, cve_id)
-                continue
-            digest = _sha256(path)
+            expected = context.inputs.advisory_files.get(relative)
+            if expected is None:
+                raise RuntimeError("A referenced GHSA body is absent from the approved manifest")
+            expected_size, expected_digest = expected
             try:
-                document = _read_document(path, "GitHub advisory source record")
+                document, digest = _read_verified_advisory(
+                    path,
+                    expected_size=expected_size,
+                    expected_digest=expected_digest,
+                    relative_path=relative,
+                )
             except ValueError:
-                _reject(context, "advisory_invalid_json", relative, digest, cve_id)
+                _reject(
+                    context,
+                    "advisory_invalid_json",
+                    relative,
+                    expected_digest,
+                    cve_id,
+                )
                 continue
             if str(document.get("id", "")).upper() != identifier.upper():
                 _reject(context, "advisory_identifier_mismatch", relative, digest, cve_id)
@@ -1009,6 +1119,7 @@ def ingest_github_advisories(
         "retrieved_at_utc": inputs.retrieved_at_utc,
         "vulzoo_commit": inputs.upstream_commit,
         "github_advisory_git_tree": inputs.git_tree,
+        "github_advisory_collection_sha256": inputs.collection_fingerprint,
         "advisories": {
             "relationship_records": context.counters["relationship_records"],
             "accepted_advisories": context.counters["accepted_advisories"],

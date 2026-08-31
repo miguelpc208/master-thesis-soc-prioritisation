@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from datetime import timedelta
 
 from thesis_pipeline.models import Asset, Finding, ScenarioConfig, Service
+from thesis_pipeline.risk import calculate_risk_weight
 
 
 @dataclass(frozen=True)
@@ -89,14 +90,12 @@ def generate_dataset(config: ScenarioConfig) -> SyntheticDataset:
             + (0.12 if cvss >= 9 else 0),
         )
         actionable = rng.random() < future_signal_probability
-        control_multiplier = 0.75 if asset.compensating_control else 1.0
-        risk_weight = round(
-            cvss
-            * (1 + asset.criticality / 5)
-            * (1 + service.criticality / 5)
-            * (1.25 if asset.internet_exposed else 1)
-            * control_multiplier,
-            4,
+        risk_weight = calculate_risk_weight(
+            cvss=cvss,
+            asset_criticality=asset.criticality,
+            service_criticality=service.criticality,
+            internet_exposed=asset.internet_exposed,
+            compensating_control=asset.compensating_control,
         )
         findings.append(
             Finding(

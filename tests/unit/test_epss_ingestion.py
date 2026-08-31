@@ -14,7 +14,9 @@ from unittest.mock import patch
 
 import yaml
 
+import thesis_pipeline.ingestion.epss as epss_module
 from thesis_pipeline.cli import main
+from thesis_pipeline.ingestion.catalogue import canonical_cve_ids_sha256
 from thesis_pipeline.ingestion.epss import ARCHIVE_REPOSITORY, _panel_fingerprint, ingest_epss_panel
 from thesis_pipeline.quality.evidence_as_of import audit_technical_evidence_as_of
 from thesis_pipeline.storage.schema import initialise_database
@@ -137,7 +139,7 @@ class EpssIngestionTests(unittest.TestCase):
         }
         self.config.write_text(yaml.safe_dump({"sources": {"epss": source}}), encoding="utf-8")
         manifest = {
-            "contract": "first-epss-acquisition-v1",
+            "contract": "first-epss-acquisition-v2",
             "retrieved_at_utc": self.retrieved_at,
             "source": {
                 "archive_repository": ARCHIVE_REPOSITORY,
@@ -154,6 +156,7 @@ class EpssIngestionTests(unittest.TestCase):
             "files": files,
             "totals": {
                 "canonical_vulzoo_cves": len(canonical),
+                "canonical_vulzoo_cve_ids_sha256": canonical_cve_ids_sha256(canonical),
                 "source_records": sum(item["source_records"] for item in files),
                 "records_matching_vulzoo": sum(item["records_matching_vulzoo"] for item in files),
                 "records_not_in_vulzoo": sum(item["records_not_in_vulzoo"] for item in files),
@@ -195,8 +198,11 @@ class EpssIngestionTests(unittest.TestCase):
             rejections = connection.execute("SELECT COUNT(*) FROM ingestion_rejection").fetchone()[
                 0
             ]
+            panels = connection.execute(
+                "SELECT status, expected_days, completed_days FROM epss_panel_ingestion"
+            ).fetchall()
 
-        self.assertEqual(result["contract"], "first-epss-ingestion-v1")
+        self.assertEqual(result["contract"], "first-epss-ingestion-v2")
         self.assertEqual(result["totals"]["source_records"], 6)
         self.assertEqual(result["totals"]["matched_records"], 4)
         self.assertEqual(result["totals"]["outside_vulzoo_snapshot"], 2)
@@ -220,7 +226,51 @@ class EpssIngestionTests(unittest.TestCase):
         self.assertEqual(runs, [("succeeded", 3, 2, 0), ("succeeded", 3, 2, 0)])
         self.assertEqual(unknown, 0)
         self.assertEqual(rejections, 0)
+        self.assertEqual(panels, [("succeeded", 2, 2)])
         self.assertFalse(result["scope"]["canonical_cves_created"])
+
+    def test_interrupted_panel_is_marked_failed_and_never_complete(self) -> None:
+        original = epss_module._ingest_day
+        calls = 0
+
+        def interrupt_after_first_day(*args: object, **kwargs: object) -> dict[str, object]:
+            nonlocal calls
+            calls += 1
+            if calls == 2:
+                raise RuntimeError("simulated interruption")
+            return original(*args, **kwargs)
+
+        with (
+            patch.object(
+                epss_module,
+                "_ingest_day",
+                side_effect=interrupt_after_first_day,
+            ),
+            self.assertRaisesRegex(RuntimeError, "simulated interruption"),
+        ):
+            self._ingest()
+
+        with self._connection() as connection:
+            panel = connection.execute(
+                "SELECT status, expected_days, completed_days FROM epss_panel_ingestion"
+            ).fetchone()
+            days = connection.execute(
+                "SELECT score_date, status FROM epss_panel_ingestion_day ORDER BY score_date"
+            ).fetchall()
+        self.assertEqual(panel, ("failed", 2, 1))
+        self.assertEqual(days, [("2025-12-31", "succeeded")])
+
+    def test_same_count_different_canonical_catalogue_is_rejected(self) -> None:
+        with self._connection() as connection, connection:
+            connection.execute("DELETE FROM cve WHERE cve_id = 'CVE-2024-0003'")
+            connection.execute(
+                "INSERT INTO cve(cve_id, source_name, retrieved_at_utc, created_at_utc) "
+                "VALUES (?, ?, ?, ?)",
+                ("CVE-2024-9999", "nvd", self.retrieved_at, self.retrieved_at),
+            )
+
+        with self.assertRaisesRegex(RuntimeError, "CVE identities changed"):
+            self._ingest()
 
     def test_repeated_panel_ingestion_is_idempotent_and_records_new_runs(self) -> None:
         first = self._ingest()

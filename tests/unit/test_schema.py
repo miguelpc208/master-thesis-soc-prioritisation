@@ -60,7 +60,9 @@ class SchemaTests(unittest.TestCase):
             self.assertIn("github_advisory_package", tables)
             self.assertIn("github_advisory_affected_version", tables)
             self.assertIn("github_advisory_version_event", tables)
-            self.assertEqual(versions, [1, 2, 3, 4, 5, 6, 7, 8, 9])
+            self.assertIn("epss_panel_ingestion", tables)
+            self.assertIn("epss_panel_ingestion_day", tables)
+            self.assertEqual(versions, [1, 2, 3, 4, 5, 6, 7, 8, 9, 10])
             self.assertTrue(
                 {"vulnerability_status", "source_snapshot_id", "ingestion_run_id"} <= cve_columns
             )
@@ -433,7 +435,7 @@ class SchemaTests(unittest.TestCase):
                     )
                 ]
 
-            self.assertEqual(versions, [1, 2, 3, 4, 5, 6, 7, 8, 9])
+            self.assertEqual(versions, [1, 2, 3, 4, 5, 6, 7, 8, 9, 10])
 
     def test_version_eight_upgrade_preserves_advisory_and_patch_rows(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

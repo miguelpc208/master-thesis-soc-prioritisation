@@ -12,6 +12,7 @@ from unittest.mock import patch
 import yaml
 
 from thesis_pipeline.cli import main
+from thesis_pipeline.ingestion.catalogue import canonical_cve_ids_sha256
 from thesis_pipeline.ingestion.diversevul import ingest_diversevul
 from thesis_pipeline.storage.schema import initialise_database
 
@@ -178,7 +179,7 @@ class DiverseVulIngestionTests(unittest.TestCase):
         }
         self.manifest.write_text(json.dumps(manifest), encoding="utf-8")
         profile = {
-            "contract": "diversevul-profile-v1",
+            "contract": "diversevul-profile-v2",
             "input_fingerprint_sha256": fingerprint,
             "scope": {
                 "raw_records_included": False,
@@ -201,7 +202,12 @@ class DiverseVulIngestionTests(unittest.TestCase):
                 "missing_source_code": 1,
             },
             "metadata": {"top_level_entries": 4},
-            "vulzoo_join": {"canonical_cves_available": 3},
+            "vulzoo_join": {
+                "canonical_cves_available": 3,
+                "canonical_cve_ids_sha256": canonical_cve_ids_sha256(
+                    {"CVE-2024-0001", "CVE-2024-0002", "CVE-2024-0003"}
+                ),
+            },
             "reference_count_comparison": {"records": {"matches": False}},
         }
         self.profile.write_text(json.dumps(profile), encoding="utf-8")
@@ -227,7 +233,7 @@ class DiverseVulIngestionTests(unittest.TestCase):
                 "SELECT reason_code, source_record_id FROM ingestion_rejection ORDER BY reason_code"
             ).fetchall()
 
-        self.assertEqual(result["contract"], "diversevul-ingestion-v1")
+        self.assertEqual(result["contract"], "diversevul-ingestion-v2")
         self.assertEqual(result["metadata"]["input_records"], 4)
         self.assertEqual(result["metadata"]["accepted_records"], 3)
         self.assertEqual(result["metadata"]["commit_ids_recovered_from_url"], 1)
@@ -375,6 +381,18 @@ class DiverseVulIngestionTests(unittest.TestCase):
             self.assertEqual(
                 connection.execute("SELECT COUNT(*) FROM diversevul_commit").fetchone(), (0,)
             )
+
+    def test_same_count_different_canonical_catalogue_is_rejected(self) -> None:
+        with contextlib.closing(sqlite3.connect(self.database)) as connection, connection:
+            connection.execute("DELETE FROM cve WHERE cve_id = 'CVE-2024-0003'")
+            connection.execute(
+                "INSERT INTO cve(cve_id, source_name, retrieved_at_utc, created_at_utc) "
+                "VALUES (?, ?, ?, ?)",
+                ("CVE-2024-9999", "nvd", "2026-08-23T00:00:00Z", "2026-08-23T00:00:00Z"),
+            )
+
+        with self.assertRaisesRegex(RuntimeError, "CVE identities changed"):
+            self._ingest()
 
     def test_profile_scope_and_database_location_are_enforced(self) -> None:
         profile = json.loads(self.profile.read_text(encoding="utf-8"))

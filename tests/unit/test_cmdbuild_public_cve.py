@@ -9,6 +9,7 @@ from thesis_pipeline.cmdbuild.public_cve import (
     bind_public_cves,
 )
 from thesis_pipeline.config import load_scenario
+from thesis_pipeline.risk import calculate_risk_weight
 from thesis_pipeline.synthetic_org.generator import generate_dataset
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -38,8 +39,26 @@ def _create_database(path: Path, records_per_severity: int = 100) -> None:
             score REAL,
             percentile REAL,
             score_date TEXT NOT NULL,
-            model_version TEXT,
-            source_name TEXT NOT NULL
+                model_version TEXT,
+                source_name TEXT NOT NULL,
+                source_snapshot_id TEXT NOT NULL DEFAULT 'snapshot-epss',
+                ingestion_run_id TEXT NOT NULL DEFAULT 'epss-run'
+        );
+        CREATE TABLE epss_panel_ingestion (
+            epss_panel_ingestion_id TEXT PRIMARY KEY,
+            panel_fingerprint_sha256 TEXT NOT NULL,
+            first_score_date TEXT NOT NULL,
+            last_score_date TEXT NOT NULL,
+            expected_days INTEGER NOT NULL,
+            completed_days INTEGER NOT NULL,
+            status TEXT NOT NULL
+        );
+        CREATE TABLE epss_panel_ingestion_day (
+                epss_panel_ingestion_id TEXT NOT NULL,
+                score_date TEXT NOT NULL,
+                source_snapshot_id TEXT NOT NULL,
+                ingestion_run_id TEXT NOT NULL,
+            status TEXT NOT NULL
         );
         CREATE TABLE kev_observation (
             cve_id TEXT NOT NULL,
@@ -50,6 +69,13 @@ def _create_database(path: Path, records_per_severity: int = 100) -> None:
         CREATE TABLE diversevul_function_cve (
             cve_id TEXT NOT NULL
         );
+        INSERT INTO epss_panel_ingestion VALUES (
+            'panel-complete', 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+            '2025-03-21', '2025-03-22', 2, 2, 'succeeded'
+        );
+            INSERT INTO epss_panel_ingestion_day VALUES
+                ('panel-complete', '2025-03-21', 'snapshot-epss', 'epss-run', 'succeeded'),
+                ('panel-complete', '2025-03-22', 'snapshot-epss', 'epss-run', 'succeeded');
         """
     )
     scores = {
@@ -80,7 +106,10 @@ def _create_database(path: Path, records_per_severity: int = 100) -> None:
                 ),
             )
             connection.execute(
-                "INSERT INTO epss_observation VALUES (?, ?, ?, ?, ?, ?, ?)",
+                """INSERT INTO epss_observation (
+                    epss_observation_id, cve_id, score, percentile,
+                    score_date, model_version, source_name
+                ) VALUES (?, ?, ?, ?, ?, ?, ?)""",
                 (
                     f"epss-prior-{record_number}",
                     cve_id,
@@ -92,7 +121,10 @@ def _create_database(path: Path, records_per_severity: int = 100) -> None:
                 ),
             )
             connection.execute(
-                "INSERT INTO epss_observation VALUES (?, ?, ?, ?, ?, ?, ?)",
+                """INSERT INTO epss_observation (
+                    epss_observation_id, cve_id, score, percentile,
+                    score_date, model_version, source_name
+                ) VALUES (?, ?, ?, ?, ?, ?, ?)""",
                 (
                     f"epss-same-day-{record_number}",
                     cve_id,
@@ -130,7 +162,10 @@ def _create_database(path: Path, records_per_severity: int = 100) -> None:
         ),
     )
     connection.execute(
-        "INSERT INTO epss_observation VALUES (?, ?, ?, ?, ?, ?, ?)",
+        """INSERT INTO epss_observation (
+            epss_observation_id, cve_id, score, percentile,
+            score_date, model_version, source_name
+        ) VALUES (?, ?, ?, ?, ?, ?, ?)""",
         (
             "epss-future-cve",
             "CVE-2025-99999",
@@ -183,6 +218,18 @@ def test_public_binding_is_deterministic_and_preserves_occurrence_grain(
         for finding in first.findings
     )
     assert all(binding.public.cve_id != "CVE-2025-99999" for binding in first.bindings)
+    original_by_id = {finding.finding_id: finding for finding in dataset.findings}
+    for finding in first.findings:
+        original = original_by_id[finding.finding_id]
+        assert finding.risk_weight == calculate_risk_weight(
+            cvss=finding.cvss,
+            asset_criticality=finding.asset_criticality,
+            service_criticality=finding.service_criticality,
+            internet_exposed=finding.internet_exposed,
+            compensating_control=finding.compensating_control,
+        )
+        if finding.cvss != original.cvss:
+            assert finding.risk_weight != original.risk_weight
 
     original_grain = {(finding.cve_id, finding.asset_id) for finding in dataset.findings}
     bound_grain = {(finding.cve_id, finding.asset_id) for finding in first.findings}
@@ -207,7 +254,6 @@ def test_public_binding_is_deterministic_and_preserves_occurrence_grain(
             finding.triage_minutes,
             finding.remediation_minutes,
             finding.actionable,
-            finding.risk_weight,
         )
         for finding in dataset.findings
     ]
@@ -221,7 +267,6 @@ def test_public_binding_is_deterministic_and_preserves_occurrence_grain(
             finding.triage_minutes,
             finding.remediation_minutes,
             finding.actionable,
-            finding.risk_weight,
         )
         for finding in first.findings
     ]
@@ -308,6 +353,44 @@ def test_public_binding_rejects_an_insufficient_severity_pool(tmp_path: Path) ->
     _create_database(database_path, records_per_severity=1)
     scenario = load_scenario(ROOT / "configs/scenarios/smoke.yaml")
     dataset = generate_dataset(scenario)
+
+    with pytest.raises(PublicCVEBindingError, match="Insufficient"):
+        bind_public_cves(dataset, scenario, database_path)
+
+
+def test_public_binding_fingerprint_covers_non_score_evidence_metadata(
+    tmp_path: Path,
+) -> None:
+    database_path = tmp_path / "vulzoo-ingestion.sqlite"
+    _create_database(database_path)
+    scenario = load_scenario(ROOT / "configs/scenarios/smoke.yaml")
+    dataset = generate_dataset(scenario)
+
+    first = bind_public_cves(dataset, scenario, database_path)
+    selected_cve = first.bindings[0].public.cve_id
+    with sqlite3.connect(database_path) as connection:
+        connection.execute(
+            "UPDATE cve SET source_name = ? WHERE cve_id = ?",
+            ("alternate-approved-source", selected_cve),
+        )
+
+    second = bind_public_cves(dataset, scenario, database_path)
+
+    assert second.findings == first.findings
+    assert second.binding_fingerprint != first.binding_fingerprint
+
+
+def test_public_binding_excludes_incomplete_epss_panels(tmp_path: Path) -> None:
+    database_path = tmp_path / "vulzoo-ingestion.sqlite"
+    _create_database(database_path)
+    scenario = load_scenario(ROOT / "configs/scenarios/smoke.yaml")
+    dataset = generate_dataset(scenario)
+    with sqlite3.connect(database_path) as connection:
+        connection.execute(
+            """UPDATE epss_panel_ingestion
+            SET status = 'failed', completed_days = 1
+            WHERE epss_panel_ingestion_id = 'panel-complete'"""
+        )
 
     with pytest.raises(PublicCVEBindingError, match="Insufficient"):
         bind_public_cves(dataset, scenario, database_path)

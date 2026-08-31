@@ -40,6 +40,10 @@ python -m thesis_pipeline.cli ingest-diversevul --config configs/data_sources.ya
 python -m thesis_pipeline.cli ingest-epss-panel --config configs/data_sources.yaml --database "$env:THESIS_DATA_ROOT\databases\vulzoo-ingestion.sqlite" --acquisition-manifest "$env:THESIS_DATA_ROOT\snapshots\epss\manifests\APPROVED-MANIFEST.json"
 python -m thesis_pipeline.cli ingest-github-advisories --config configs/data_sources.yaml --database "$env:THESIS_DATA_ROOT\databases\vulzoo-ingestion.sqlite" --acquisition-manifest "$env:THESIS_DATA_ROOT\snapshots\vulzoo-github-advisory\manifests\APPROVED-MANIFEST.json" --audit-report outputs/APPROVED-PATCH-ADVISORY-AUDIT.json --decision-at "2025-03-22T09:00:00Z"
 python -m thesis_pipeline.cli audit-technical-as-of --database "$env:THESIS_DATA_ROOT\databases\vulzoo-ingestion.sqlite" --decision-at "2026-08-24T23:59:59Z" --mode strict_snapshot
+python -m thesis_pipeline.cli cmdbuild-preview --phase all --database "$env:THESIS_DATA_ROOT\databases\vulzoo-ingestion.sqlite"
+python -m thesis_pipeline.cli cmdbuild-ingest-business --expected-fingerprint <approved-business-sha256>
+python -m thesis_pipeline.cli cmdbuild-ingest-operational --database "$env:THESIS_DATA_ROOT\databases\vulzoo-ingestion.sqlite" --expected-fingerprint <approved-operational-sha256>
+python -m thesis_pipeline.cli cmdbuild-export-evidence --database "$env:THESIS_DATA_ROOT\databases\vulzoo-ingestion.sqlite" --output "$env:THESIS_DATA_ROOT\evidence\cmdbuild-evidence.json"
 ```
 
 `inventory-vulzoo` never downloads data. It inventories an already approved local clone beneath
@@ -73,6 +77,11 @@ advisory descriptions, patch bodies and exploit payloads are never copied.
 eligible at an explicit UTC decision cut-off. `strict_snapshot` uses retained-snapshot availability;
 `source_effective_reconstruction` is an explicitly incomplete historical reconstruction. See
 `docs/TEMPORAL_EVIDENCE_CONTRACT.md` before using either mode.
+
+The versioned CMDBuild commands rebuild the same plans used by preview and ingestion. Preview is
+read-only; both ingestion commands retain the existing exact-fingerprint and rollback gates; the
+evidence command refuses to write inside Git or overwrite an existing file. See
+`docs/PR4_REMEDIATION_CONTRACT.md` before reusing pre-remediation fingerprints.
 
 ## Experiment ladder
 
