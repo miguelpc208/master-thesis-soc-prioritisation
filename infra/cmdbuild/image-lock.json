@@ -1,0 +1,38 @@
+{
+  "images": {
+    "cmdbuild": {
+      "architecture": "amd64",
+      "digest": "sha256:7a879e87b02878e98141da98dc4a44227a19d48755a22a3ce2622a86438e52d6",
+      "image_id": "sha256:7a879e87b02878e98141da98dc4a44227a19d48755a22a3ce2622a86438e52d6",
+      "labels": {
+        "maintaner": "Itmicus <order@itmicus.com>",
+        "org.opencontainers.image.ref.name": "ubuntu",
+        "org.opencontainers.image.version": "24.04",
+        "version": "1.0"
+      },
+      "os": "linux",
+      "pinned_reference": "itmicus/cmdbuild@sha256:7a879e87b02878e98141da98dc4a44227a19d48755a22a3ce2622a86438e52d6",
+      "reference": "itmicus/cmdbuild:r2u-2.4-4.1.0",
+      "repository": "itmicus/cmdbuild",
+      "size_bytes": 930761392,
+      "source": "community-maintained"
+    },
+    "postgres": {
+      "architecture": "amd64",
+      "digest": "sha256:08f4b1e1f4a571008c60272ceb9e0d1f9f8f643792d006b74a35b1bec44c2218",
+      "image_id": "sha256:08f4b1e1f4a571008c60272ceb9e0d1f9f8f643792d006b74a35b1bec44c2218",
+      "labels": {
+        "maintainer": "PostGIS Project - https://postgis.net",
+        "org.opencontainers.image.description": "PostGIS 3.5.7 spatial database extension with PostgreSQL 17 Alpine",
+        "org.opencontainers.image.source": "https://github.com/postgis/docker-postgis"
+      },
+      "os": "linux",
+      "pinned_reference": "postgis/postgis@sha256:08f4b1e1f4a571008c60272ceb9e0d1f9f8f643792d006b74a35b1bec44c2218",
+      "reference": "postgis/postgis:17-3.5-alpine",
+      "repository": "postgis/postgis",
+      "size_bytes": 186775033,
+      "source": "postgis-container-image"
+    }
+  },
+  "schema_version": "1.0"
+}

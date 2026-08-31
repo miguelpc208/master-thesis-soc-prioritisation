@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import heapq
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import timedelta
 from itertools import pairwise
 
@@ -27,10 +27,19 @@ def _severity(cvss: float) -> str:
 
 
 def _correlate(findings: tuple[Finding, ...]) -> tuple[Finding, ...]:
+    """Keep the earliest finding while promoting actionability with an ANY rule."""
+
     representatives: dict[str, Finding] = {}
+    actionable_by_key: dict[str, bool] = {}
     for finding in sorted(findings, key=lambda item: (item.finding_created, item.finding_id)):
         representatives.setdefault(finding.correlation_key, finding)
-    return tuple(representatives.values())
+        actionable_by_key[finding.correlation_key] = (
+            actionable_by_key.get(finding.correlation_key, False) or finding.actionable
+        )
+    return tuple(
+        replace(representative, actionable=actionable_by_key[correlation_key])
+        for correlation_key, representative in representatives.items()
+    )
 
 
 def simulate_workflow(
@@ -69,12 +78,21 @@ def simulate_workflow(
         heapq.heappush(analyst_heap, (triage_completed, analyst_index))
         decision_time = triage_completed + timedelta(minutes=1)
 
-        remediator_available, remediator_index = heapq.heappop(remediator_heap)
-        remediation_started = max(decision_time, remediator_available) + timedelta(
-            minutes=config.patch_window_delay_minutes
-        )
-        remediation_completed = remediation_started + timedelta(minutes=finding.remediation_minutes)
-        heapq.heappush(remediator_heap, (remediation_completed, remediator_index))
+        remediation_started = None
+        remediation_completed = None
+        remediator_index = None
+        if finding.actionable:
+            remediator_available, remediator_index = heapq.heappop(remediator_heap)
+            remediation_started = max(decision_time, remediator_available) + timedelta(
+                minutes=config.patch_window_delay_minutes
+            )
+            remediation_completed = remediation_started + timedelta(
+                minutes=finding.remediation_minutes
+            )
+            heapq.heappush(
+                remediator_heap,
+                (remediation_completed, remediator_index),
+            )
 
         severity = _severity(finding.cvss)
         sla_deadline = alert_created + timedelta(hours=config.sla_hours[severity])
@@ -92,7 +110,11 @@ def simulate_workflow(
             remediation_completed=remediation_completed,
             sla_deadline=sla_deadline,
             analyst_id=f"ANALYST-{analyst_index + 1:02d}",
-            remediator_id=f"REMEDIATOR-{remediator_index + 1:02d}",
+            remediator_id=(
+                f"REMEDIATOR-{remediator_index + 1:02d}"
+                if remediator_index is not None
+                else None
+            ),
         )
         if any(later < earlier for earlier, later in pairwise(record.lifecycle())):
             raise RuntimeError(f"Non-monotonic lifecycle for {finding.finding_id}")

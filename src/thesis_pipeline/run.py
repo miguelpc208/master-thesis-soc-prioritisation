@@ -95,6 +95,7 @@ def _write_events(path: Path, result: SimulationResult) -> None:
         "triage_started",
         "triage_completed",
         "decision",
+        "closed_at",
         "remediation_started",
         "remediation_completed",
         "sla_deadline",
@@ -121,11 +122,20 @@ def _write_events(path: Path, result: SimulationResult) -> None:
                     "triage_started": record.triage_started.isoformat(),
                     "triage_completed": record.triage_completed.isoformat(),
                     "decision": record.decision.isoformat(),
-                    "remediation_started": record.remediation_started.isoformat(),
-                    "remediation_completed": record.remediation_completed.isoformat(),
+                    "closed_at": record.closed_at.isoformat(),
+                    "remediation_started": (
+                        record.remediation_started.isoformat()
+                        if record.remediation_started is not None
+                        else ""
+                    ),
+                    "remediation_completed": (
+                        record.remediation_completed.isoformat()
+                        if record.remediation_completed is not None
+                        else ""
+                    ),
                     "sla_deadline": record.sla_deadline.isoformat(),
                     "analyst_id": record.analyst_id,
-                    "remediator_id": record.remediator_id,
+                    "remediator_id": record.remediator_id or "",
                     "actionable": record.finding.actionable,
                     "risk_weight": record.finding.risk_weight,
                 }

@@ -13,6 +13,7 @@ authors = [{name = "Ricardo"}]
 dependencies = [
   "PyYAML>=6.0",
   "pydantic>=2.7",
+  "requests>=2.34,<3",
   "simpy>=4.1",
 ]
 

@@ -1,0 +1,48 @@
+{
+  "schema_version": "1.2",
+  "simulation": {
+    "scenario_id": "smoke",
+    "scenario_path": "configs/scenarios/smoke.yaml",
+    "seed": 20260803,
+    "start_date": "2025-03-22",
+    "end_date": "2025-03-25"
+  },
+  "population": {
+    "vendors": 3,
+    "contracts": 10,
+    "slas": 8,
+    "business_services": 10,
+    "applications": 100,
+    "servers": 100,
+    "raw_findings": 240,
+    "vulnerability_occurrences": 201,
+    "duplicate_findings": 39
+  },
+  "time_model": {
+    "timezone": "UTC",
+    "enforce_technical_evidence_as_of_detection": true
+  },
+  "evaluation": {
+    "baseline_policies": [],
+    "candidate_policies": [],
+    "same_input_population": true,
+    "same_operational_capacity": true,
+    "same_random_seed": true
+  },
+  "generation": {
+    "vendor_strategy": "one_per_department",
+    "contract_strategy": "one_per_business_service",
+    "application_strategy": "one_per_server",
+    "sla_strategy": "shared_by_severity_and_object",
+    "severity_to_priority": {
+      "low": "normal",
+      "medium": "medium",
+      "high": "high",
+      "critical": "critical"
+    },
+    "finding_timeline_strategy": "preloaded_backlog_before_operational_horizon",
+    "occurrence_grain": "cve_id_and_asset_id",
+    "cve_binding_strategy": "replace_synthetic_identifiers_from_public_dataset",
+    "allow_synthetic_cve_ids_in_cmdbuild": false
+  }
+}
